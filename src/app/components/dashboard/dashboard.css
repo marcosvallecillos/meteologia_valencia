@@ -1,0 +1,148 @@
+.dashboard {
+  padding: 1.5rem 2rem;
+  background-color: #f5f5f5;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #111827;
+  color: #f9fafb;
+  padding: 1.5rem 2rem;
+  border-radius: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.dashboard-header p {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: #d1d5db;
+}
+
+.updated-at {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.air-index-card {
+  background: #111827;
+  border: 1px solid #374151;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.75rem;
+  text-align: right;
+}
+
+.air-index-card span {
+  display: block;
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.air-index-card strong {
+  font-size: 1.75rem;
+  font-weight: 600;
+  display: block;
+}
+
+.badge {
+  display: inline-block;
+  margin-top: 0.25rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #4b5563;
+  color: #e5e7eb;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.bottom-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.value {
+  font-size: 1.5rem;
+  margin: 0 0 0.5rem;
+}
+
+.unit {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.pollutants {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.pollutants li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.pollutants li:last-child {
+  border-bottom: none;
+}
+
+.large {
+  min-height: 220px;
+}
+
+.placeholder-chart,
+.placeholder-map {
+  height: 160px;
+  border-radius: 0.75rem;
+  border: 1px dashed #d1d5db;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  color: #9ca3af;
+  background: repeating-linear-gradient(
+    -45deg,
+    #f9fafb,
+    #f9fafb 10px,
+    #f3f4f6 10px,
+    #f3f4f6 20px
+  );
+}
+
+@media (max-width: 1024px) {
+  .summary-grid,
+  .bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

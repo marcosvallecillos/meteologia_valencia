@@ -1,0 +1,67 @@
+<div class="dashboard">
+  <header class="dashboard-header">
+    <div>
+      <h1>Valencia, España</h1>
+      <p>Monitoreo en tiempo real de calidad ambiental y tráfico</p>
+      <p class="updated-at">Actualizado: {{ airQuality?.lastUpdated || '--' }}</p>
+    </div>
+    <div class="air-index-card">
+      <span>Índice de Calidad del Aire</span>
+      <strong>{{ airQuality?.aqi ?? '--' }}</strong>
+      <span class="badge">{{ airQuality?.category || 'Sin datos' }}</span>
+    </div>
+  </header>
+
+  <section class="summary-grid">
+    <article class="card">
+      <h2>Contaminación</h2>
+      <p class="value">
+        {{ airQuality?.aqi ?? '--' }}
+        <span class="unit">ICA</span>
+      </p>
+
+      @if (airQuality?.pollutants?.length) {
+        <ul class="pollutants">
+          @for (p of airQuality?.pollutants ?? []; track p.name) {
+            <li>
+              <span>{{ p.name }}</span>
+              <span>{{ p.value }} {{ p.unit }}</span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p>No hay datos de contaminantes disponibles.</p>
+      }
+    </article>
+
+    <article class="card">
+      <h2>Tráfico</h2>
+      <app-trafico />
+    </article>
+
+    <article class="card">
+      <h2>Precipitaciones</h2>
+      <p class="value">
+        {{ (weather?.rain ?? 0) | number : '1.1-1' }}
+        <span class="unit">mm</span>
+      </p>
+      <p>
+        Probabilidad:
+        {{ (weather?.rainProbability ?? 0) | number : '1.0-0' }}%
+      </p>
+    </article>
+  </section>
+
+  <section class="bottom-grid">
+    <article class="card large">
+      <h2>Evolución de Contaminación</h2>
+      <div class="placeholder-chart">Gráfica en desarrollo</div>
+    </article>
+
+    <article class="card large">
+      <h2>Mapa de Calor - Contaminación</h2>
+      <div class="placeholder-map">Mapa en desarrollo</div>
+    </article>
+  </section>
+</div>
+
