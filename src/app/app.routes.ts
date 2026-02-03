@@ -1,9 +1,10 @@
 import { Routes } from '@angular/router';
-import { Main } from './views/main/main';
+import { MainComponent } from './views/main/main';
+import { Leaflet } from './components/leaflet/leaflet';
 
 export const routes: Routes = [
-  {
-    path: '',
-    component: Main,
-  },
+  { path: '', redirectTo: '/main', pathMatch: 'full' },
+  { path: 'main', component: MainComponent },
+  { path: 'index', component: MainComponent },
+  { path: 'leaflet', component: Leaflet }
 ];

@@ -41,6 +41,12 @@ export interface PollutionHistoryData {
   o3?: number;
 }
 
+export interface PollutionHeatmapPoint {
+  lat: number;
+  lng: number;
+  value: number;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -266,5 +272,122 @@ export class ApiService {
     }
     
     this.pollutionHistorySignal.set(history);
+  }
+
+  async fetchPollutionHeatmapValencia(): Promise<PollutionHeatmapPoint[]> {
+    try {
+      // Coordenadas de estaciones de monitoreo en Valencia (simuladas)
+      // Basadas en ubicaciones reales de estaciones de calidad del aire
+      const valenciaStations = [
+        { lat: 39.4699, lng: -0.3763, name: 'Centro', baseValue: 1.0 },
+        { lat: 39.4800, lng: -0.3600, name: 'Burjassot', baseValue: 0.85 },
+        { lat: 39.4600, lng: -0.3900, name: 'Quart de Poblet', baseValue: 0.9 },
+        { lat: 39.4750, lng: -0.3700, name: 'Poblats Marítims', baseValue: 1.15 },
+        { lat: 39.4650, lng: -0.3800, name: 'Eixample', baseValue: 1.1 },
+        { lat: 39.4720, lng: -0.3750, name: 'Pla del Real', baseValue: 0.95 },
+        { lat: 39.4680, lng: -0.3650, name: 'Ciutat Vella', baseValue: 1.2 },
+        { lat: 39.4780, lng: -0.3850, name: 'Campanar', baseValue: 0.88 },
+        { lat: 39.4620, lng: -0.3750, name: 'Jesús', baseValue: 1.05 },
+        { lat: 39.4700, lng: -0.3500, name: 'Alboraya', baseValue: 0.75 },
+        { lat: 39.4550, lng: -0.3800, name: 'Torrent', baseValue: 0.92 },
+        { lat: 39.4850, lng: -0.3700, name: 'Godella', baseValue: 0.8 },
+        { lat: 39.4750, lng: -0.3900, name: 'Manises', baseValue: 0.95 },
+        { lat: 39.4680, lng: -0.3400, name: 'Port Saplatja', baseValue: 0.7 },
+        { lat: 39.4600, lng: -0.3600, name: 'Nazaret', baseValue: 1.0 },
+        { lat: 39.4720, lng: -0.3650, name: 'Russafa', baseValue: 1.15 },
+        { lat: 39.4650, lng: -0.3700, name: 'Benimaclet', baseValue: 0.9 },
+        { lat: 39.4800, lng: -0.3750, name: 'Orriols', baseValue: 0.85 }
+      ];
+
+      // Obtener datos actuales de calidad del aire
+      const airQuality = this.airQualitySignal();
+      const pm25Value = airQuality?.pollutants?.find(p => p.name === 'PM2.5')?.value || 45;
+
+      // Generar puntos principales de estaciones
+      const mainPoints: PollutionHeatmapPoint[] = valenciaStations.map(station => {
+        // Variación determinística basada en la ubicación
+        const latSeed = Math.floor(station.lat * 10000) % 50;
+        const lngSeed = Math.floor(station.lng * 10000) % 50;
+        const variation = station.baseValue * (0.9 + (latSeed + lngSeed) / 100);
+        
+        return {
+          lat: station.lat,
+          lng: station.lng,
+          value: Math.round(pm25Value * variation)
+        };
+      });
+
+      // Generar puntos intermedios para crear un heatmap más denso y realista
+      const interpolatedPoints: PollutionHeatmapPoint[] = [];
+      
+      // Interpolar entre estaciones cercanas
+      for (let i = 0; i < mainPoints.length; i++) {
+        for (let j = i + 1; j < mainPoints.length; j++) {
+          const p1 = mainPoints[i];
+          const p2 = mainPoints[j];
+          
+          // Calcular distancia
+          const distance = Math.sqrt(
+            Math.pow(p1.lat - p2.lat, 2) + Math.pow(p1.lng - p2.lng, 2)
+          );
+          
+          // Solo interpolar si están relativamente cerca (menos de 0.02 grados)
+          if (distance < 0.02) {
+            // Generar 2-3 puntos intermedios
+            const numPoints = Math.floor(2 + Math.random() * 2);
+            for (let k = 1; k <= numPoints; k++) {
+              const ratio = k / (numPoints + 1);
+              const lat = p1.lat + (p2.lat - p1.lat) * ratio;
+              const lng = p1.lng + (p2.lng - p1.lng) * ratio;
+              const value = p1.value + (p2.value - p1.value) * ratio;
+              
+              // Añadir pequeña variación
+              const variation = 0.85 + Math.random() * 0.3;
+              
+              interpolatedPoints.push({
+                lat: lat + (Math.random() - 0.5) * 0.002,
+                lng: lng + (Math.random() - 0.5) * 0.002,
+                value: Math.round(value * variation)
+              });
+            }
+          }
+        }
+      }
+
+      // Generar puntos adicionales alrededor de cada estación principal para cubrir más área
+      mainPoints.forEach(point => {
+        // Aumentar a 6 puntos alrededor de cada estación para mayor cobertura
+        for (let i = 0; i < 6; i++) {
+          const angle = (Math.PI * 2 * i) / 6;
+          const radius = 0.005 + Math.random() * 0.008; // Radio más amplio
+          interpolatedPoints.push({
+            lat: point.lat + Math.cos(angle) * radius,
+            lng: point.lng + Math.sin(angle) * radius,
+            value: Math.round(point.value * (0.9 + Math.random() * 0.2))
+          });
+        }
+        // Agregar puntos adicionales en un segundo círculo más amplio
+        for (let i = 0; i < 4; i++) {
+          const angle = (Math.PI * 2 * i) / 4;
+          const radius = 0.010 + Math.random() * 0.010;
+          interpolatedPoints.push({
+            lat: point.lat + Math.cos(angle) * radius,
+            lng: point.lng + Math.sin(angle) * radius,
+            value: Math.round(point.value * (0.85 + Math.random() * 0.3))
+          });
+        }
+      });
+
+      // Combinar puntos principales e interpolados
+      return [...mainPoints, ...interpolatedPoints];
+    } catch (e) {
+      console.error('Error al obtener datos del mapa de calor', e);
+      // Retornar datos por defecto
+      return [
+        { lat: 39.4699, lng: -0.3763, value: 45 },
+        { lat: 39.4800, lng: -0.3600, value: 42 },
+        { lat: 39.4600, lng: -0.3900, value: 48 }
+      ];
+    }
   }
 }

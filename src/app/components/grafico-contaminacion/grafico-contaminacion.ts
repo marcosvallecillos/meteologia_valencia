@@ -11,9 +11,9 @@ type TimeRange = '24h' | '7d' | '30d';
   styleUrl: './grafico-contaminacion.css',
 })
 export class GraficoContaminacion implements OnInit, AfterViewInit, OnDestroy {
-  @ViewChild('chartCanvas', { static: false }) chartCanvas!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('chartCanvas', { static: true }) chartCanvas!: ElementRef<HTMLCanvasElement>;
   public chart: Chart | undefined;
-  isloading:boolean = false;
+
   readonly selectedTimeRange = signal<TimeRange>('24h');
   readonly pollutionHistory = computed(() => this.api.pollutionHistory());
   private isViewReady = false;
@@ -26,15 +26,17 @@ export class GraficoContaminacion implements OnInit, AfterViewInit, OnDestroy {
     if (this.isViewReady && history && history.length > 0) {
       // Verificar que el canvas esté disponible
       if (this.chartCanvas?.nativeElement) {
+        // Usar setTimeout para asegurar que el canvas esté completamente renderizado
         setTimeout(() => {
           this.createChart(timeRange);
-        }, 150);
+        }, 100);
       } else {
+        // Si el canvas no está disponible, intentar de nuevo después de un breve delay
         setTimeout(() => {
           if (this.chartCanvas?.nativeElement && history && history.length > 0) {
             this.createChart(timeRange);
           }
-        }, 300);
+        }, 200);
       }
     }
   });
@@ -48,15 +50,25 @@ export class GraficoContaminacion implements OnInit, AfterViewInit, OnDestroy {
 
   ngAfterViewInit(): void {
     this.isViewReady = true;
+    // Intentar crear el gráfico si ya hay datos
     const history = this.pollutionHistory();
     console.log('AfterViewInit - Datos disponibles:', history?.length || 0);
-    if (history && history.length > 0 && this.chartCanvas?.nativeElement) {
+    if (history && history.length > 0) {
+      // Esperar un poco más para asegurar que el canvas esté completamente renderizado
       setTimeout(() => {
-        this.isloading = false;
-        this.createChart(this.selectedTimeRange());
-      }, 200);
+        if (this.chartCanvas?.nativeElement) {
+          this.createChart(this.selectedTimeRange());
+        } else {
+          // Reintentar si el canvas aún no está disponible
+          setTimeout(() => {
+            if (this.chartCanvas?.nativeElement) {
+              this.createChart(this.selectedTimeRange());
+            }
+          }, 300);
+        }
+      }, 100);
     } else {
-      this.isloading = true;
+      // Si no hay datos, esperar a que se carguen
       console.log('Esperando datos...');
     }
   }

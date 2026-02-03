@@ -10,6 +10,6 @@ import { GraficoContaminacion } from '../../components/grafico-contaminacion/gra
   templateUrl: './main.html',
   styleUrl: './main.css',
 })
-export class Main {
+export class MainComponent {
 
 }
