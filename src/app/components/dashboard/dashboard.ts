@@ -3,10 +3,11 @@ import { DecimalPipe } from '@angular/common';
 import { Trafico } from '../trafico/trafico';
 import { ApiService } from '../../service/api-service.service';
 import { GraficoContaminacion } from '../grafico-contaminacion/grafico-contaminacion';
+import { Leaflet } from '../leaflet/leaflet';
 
 @Component({
   selector: 'app-dashboard',
-  imports: [Trafico, DecimalPipe,GraficoContaminacion],
+  imports: [Trafico, DecimalPipe,GraficoContaminacion,Leaflet ],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.css',
 })
