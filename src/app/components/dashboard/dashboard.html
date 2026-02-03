@@ -3,29 +3,35 @@
     <div>
       <h1>Valencia, España</h1>
       <p>Monitoreo en tiempo real de calidad ambiental y tráfico</p>
-      <p class="updated-at">Actualizado: {{ airQuality?.lastUpdated || '--' }}</p>
+      <p class="updated-at">Actualizado: {{ airQuality()?.lastUpdated || '--' }}</p>
     </div>
     <div class="air-index-card">
       <span>Índice de Calidad del Aire</span>
-      <strong>{{ airQuality?.aqi ?? '--' }}</strong>
-      <span class="badge">{{ airQuality?.category || 'Sin datos' }}</span>
+      <strong>{{ airQuality()?.aqi ?? '--' }}</strong>
+      <span class="badge">{{ airQuality()?.category || 'Sin datos' }}</span>
     </div>
   </header>
 
   <section class="summary-grid">
     <article class="card">
-      <h2>Contaminación</h2>
-      <p class="value">
-        {{ airQuality?.aqi ?? '--' }}
-        <span class="unit">ICA</span>
+      <div class="title-container">
+        <i class="fa-solid fa-cloud pollution-icon"></i>
+        <h2>Contaminación</h2>
+      </div>
+      <p class="main-value">
+        {{ pm25Value() }}
+        <span class="main-unit">PM2.5 µg/m³</span>
       </p>
 
-      @if (airQuality?.pollutants?.length) {
+      @if (otherPollutants().length) {
         <ul class="pollutants">
-          @for (p of airQuality?.pollutants ?? []; track p.name) {
+          @for (p of otherPollutants(); track p.name) {
             <li>
-              <span>{{ p.name }}</span>
-              <span>{{ p.value }} {{ p.unit }}</span>
+              <span class="pollutant-name">{{ p.name }}</span>
+              <div class="progress-bar-container">
+                <div class="progress-bar" [style.width.%]="getPollutantPercentage(p)"></div>
+              </div>
+              <span class="pollutant-value">{{ p.value }} {{ p.unit }}</span>
             </li>
           }
         </ul>
@@ -35,27 +41,50 @@
     </article>
 
     <article class="card">
-      <h2>Tráfico</h2>
+      <div class="title-container">
+        <i class="fas fa-car traffic-icon"></i>
+        <h2>Tráfico</h2>
+      </div>
       <app-trafico />
     </article>
 
     <article class="card">
-      <h2>Precipitaciones</h2>
-      <p class="value">
-        {{ (weather?.rain ?? 0) | number : '1.1-1' }}
-        <span class="unit">mm</span>
+      <div class="title-container">
+        <i class="fas fa-cloud-showers-heavy precipitation-icon"></i>
+        <h2>Precipitaciones</h2>
+      </div>
+      <p class="main-value">
+        {{ (weather()?.rain ?? 0) | number : '1.1-1' }}
+        <span class="main-unit">mm/hora</span>
       </p>
-      <p>
-        Probabilidad:
-        {{ (weather?.rainProbability ?? 0) | number : '1.0-0' }}%
-      </p>
+      
+      <ul class="weather-details">
+        <li>
+          <span class="detail-label">Humedad</span>
+          <div class="progress-bar-container">
+            <div class="progress-bar" [style.width.%]="humidity()"></div>
+          </div>
+          <span class="detail-value">{{ humidity() }}%</span>
+        </li>
+        <li>
+          <span class="detail-label">Prob. Lluvia</span>
+          <div class="progress-bar-container">
+            <div class="progress-bar" [style.width.%]="(weather()?.rainProbability ?? 0)"></div>
+          </div>
+          <span class="detail-value">{{ (weather()?.rainProbability ?? 0) }}%</span>
+        </li>
+        <li>
+          <span class="detail-label">Acumulado 24h</span>
+          <span class="detail-value">{{ (weather()?.rain24h ?? 0) | number : '1.1-1' }} mm</span>
+        </li>
+      </ul>
     </article>
   </section>
 
   <section class="bottom-grid">
     <article class="card large">
       <h2>Evolución de Contaminación</h2>
-      <div class="placeholder-chart">Gráfica en desarrollo</div>
+      <app-grafico-contaminacion></app-grafico-contaminacion>
     </article>
 
     <article class="card large">

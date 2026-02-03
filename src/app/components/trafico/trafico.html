@@ -1,1 +1,22 @@
-<p>trafico works!</p>
+@if (traffic()) {
+  <div class="traffic-main-value">
+    <span class="traffic-percentage">{{ traffic()?.overallCongestion ?? 0 }}%</span>
+    <span class="traffic-category">{{ traffic()?.category ?? '--' }}</span>
+  </div>
+  
+  @if (traffic()?.streets?.length) {
+    <ul class="traffic-streets">
+      @for (street of traffic()?.streets ?? []; track street.name) {
+        <li>
+          <span class="street-name">{{ street.name }}</span>
+          <div class="progress-bar-container">
+            <div class="progress-bar" [style.width.%]="getCongestionPercentage(street.congestion)"></div>
+          </div>
+          <span class="street-value">{{ street.congestion }}%</span>
+        </li>
+      }
+    </ul>
+  }
+} @else {
+  <p>No hay datos de tráfico disponibles.</p>
+}

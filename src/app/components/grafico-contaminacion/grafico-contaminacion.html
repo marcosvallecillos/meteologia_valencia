@@ -1,0 +1,36 @@
+<div class="chart-wrapper">
+    <div class="chart-header">
+        <h2 class="chart-title">Evolución de Contaminación</h2>
+        <div class="time-range-buttons">
+            <button class="time-button" [class.active]="selectedTimeRange() === '24h'" (click)="selectTimeRange('24h')">
+                24h
+            </button>
+            <button class="time-button" [class.active]="selectedTimeRange() === '7d'" (click)="selectTimeRange('7d')">
+                7d
+            </button>
+            <button class="time-button" [class.active]="selectedTimeRange() === '30d'" (click)="selectTimeRange('30d')">
+                30d
+            </button>
+        </div>
+    </div>
+    
+  
+    <div class="chart-container" [class.hidden]="isloading">
+        <canvas #chartCanvas></canvas>
+      </div>     
+      
+    <div class="chart-legend">
+        <div class="legend-item">
+            <span class="legend-dot"></span>
+            <span>PM2.5</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-dot"></span>
+            <span>PM10</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-dot"></span>
+            <span>NO2</span>
+        </div>
+    </div>
+</div>

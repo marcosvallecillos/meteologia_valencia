@@ -89,13 +89,32 @@
 }
 
 .value {
-  font-size: 1.5rem;
+  font-size: 1rem;
+  text-align: right;
+  color: #111827;
   margin: 0 0 0.5rem;
 }
 
 .unit {
   font-size: 0.75rem;
   color: #6b7280;
+}
+
+.main-value {
+  font-size: 2rem;
+  font-weight: 600;
+  text-align: right;
+  color: #111827;
+  margin: 0.5rem 0 1rem;
+  line-height: 1.2;
+}
+
+.main-unit {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: #6b7280;
+  margin-top: 0.25rem;
 }
 
 .pollutants {
@@ -107,13 +126,44 @@
 
 .pollutants li {
   display: flex;
-  justify-content: space-between;
-  padding: 0.2rem 0;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
   border-bottom: 1px solid #e5e7eb;
 }
 
 .pollutants li:last-child {
   border-bottom: none;
+}
+
+.pollutant-name {
+  min-width: 50px;
+  font-weight: 500;
+  color: #111827;
+}
+
+.progress-bar-container {
+  flex: 1;
+  height: 8px;
+  background-color: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: #4b5563;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  min-width: 2px;
+}
+
+.pollutant-value {
+  min-width: 80px;
+  text-align: right;
+  color: #111827;
+  font-size: 0.8rem;
 }
 
 .large {
@@ -146,3 +196,56 @@
   }
 }
 
+.title-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.title-container h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+  flex: 1;
+}
+
+.precipitation-icon,
+.pollution-icon,
+.traffic-icon {
+  font-size: 1.25rem;
+  color: #4b5563;
+}
+
+.weather-details {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.weather-details li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.weather-details li:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  min-width: 100px;
+  font-weight: 500;
+  color: #111827;
+}
+
+.detail-value {
+  min-width: 60px;
+  text-align: right;
+  color: #111827;
+  font-size: 0.8rem;
+}
