@@ -22,9 +22,21 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "**/*",
+                "input": "src/css",
+                "output": "/css"
+              },
+              {
+                "glob": "**/*",
+                "input": "src/js",
+                "output": "/js"
               }
             ],
             "styles": [
+              "src/css/bootstrap.min.css",
+              "node_modules/leaflet/dist/leaflet.css",
               "src/styles.css"
             ]
           },

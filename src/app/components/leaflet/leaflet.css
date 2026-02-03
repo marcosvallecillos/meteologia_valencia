@@ -1,0 +1,117 @@
+.map-wrapper {
+  width: 100%;
+  height: 100%;
+}
+
+#map {
+  width: 100%;
+  height: 90%;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 0;
+  background: #f0f0f0;
+}
+
+/* Ocultar elementos del mapa base para que se vea principalmente el heatmap */
+.leaflet-tile-container img {
+  opacity: 0.15 !important;
+}
+
+.leaflet-tile-pane {
+  opacity: 0.2 !important;
+}
+
+/* Estilos para los popups personalizados */
+.custom-popup .leaflet-popup-content-wrapper {
+  border-radius: 8px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+}
+
+.custom-popup .leaflet-popup-tip {
+  background: white;
+}
+
+/* Mejorar la apariencia de los controles del mapa */
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+}
+
+.leaflet-control-zoom a {
+  background-color: white !important;
+  color: #333 !important;
+  border: 1px solid #ddd !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #f5f5f5 !important;
+}
+
+/* Estilos para la leyenda */
+.legend-container {
+  display: none;
+  background-color: rgba(255, 255, 255, 0.95);
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.legend-title {
+  font-size: 15px;
+  font-weight: bold;
+  margin-bottom: 10px;
+  color: #333;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 8px;
+}
+
+.legend-grades {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.legend-grade {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.legend-color {
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+.legend-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.legend-label {
+  font-weight: 600;
+  color: #333;
+}
+
+.legend-range {
+  font-size: 11px;
+  color: #666;
+}
+
+/* Cuando Leaflet agregue la leyenda al control, mostrarla */
+.leaflet-control .legend-container {
+  display: block;
+}
+
+/* Ocultar la atribución de Leaflet */
+.leaflet-control-attribution {
+  display: none !important;
+}
+  
