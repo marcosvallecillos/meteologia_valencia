@@ -1,4 +1,4 @@
-import { Component, AfterViewInit, ViewChild, ElementRef } from '@angular/core';
+import { Component, AfterViewInit, ViewChild, ElementRef, OnDestroy } from '@angular/core';
 import * as L from 'leaflet';
 import 'leaflet.heat';
 import { ApiService, PollutionHeatmapPoint } from '../../service/api-service.service';
@@ -9,41 +9,141 @@ import { ApiService, PollutionHeatmapPoint } from '../../service/api-service.ser
   templateUrl: './leaflet.html',
   styleUrl: './leaflet.css',
 })
-export class Leaflet implements AfterViewInit {
+export class Leaflet implements AfterViewInit, OnDestroy {
   @ViewChild('legendContainer', { static: true }) legendContainer!: ElementRef<HTMLDivElement>;
+  @ViewChild('mapContainer', { static: false }) mapContainer!: ElementRef<HTMLDivElement>;
+  
+  private map: L.Map | null = null;
+  private heatLayer: any = null;
+  private resizeHandler?: () => void;
 
   constructor(private api: ApiService) {}
 
   ngAfterViewInit(): void {
-    this.initializeMap();
+    // Esperar a que el DOM esté completamente renderizado y el contenedor tenga dimensiones
+    setTimeout(() => {
+      this.waitForMapContainer();
+    }, 200);
+  }
+
+  ngOnDestroy(): void {
+    // Remover listener de resize
+    if (this.resizeHandler) {
+      window.removeEventListener('resize', this.resizeHandler);
+    }
+    
+    if (this.map) {
+      this.map.remove();
+      this.map = null;
+    }
+  }
+
+  /**
+   * Espera a que el contenedor del mapa tenga dimensiones válidas antes de inicializar
+   */
+  private waitForMapContainer(): void {
+    const mapElement = document.getElementById('map');
+    
+    if (!mapElement) {
+      console.error('No se encontró el elemento del mapa');
+      return;
+    }
+
+    // Verificar que el contenedor tenga dimensiones válidas
+    const checkDimensions = () => {
+      const rect = mapElement.getBoundingClientRect();
+      const hasDimensions = rect.width > 0 && rect.height > 0;
+      
+      if (hasDimensions) {
+        this.initializeMap();
+      } else {
+        // Reintentar después de un breve delay
+        setTimeout(checkDimensions, 100);
+      }
+    };
+
+    checkDimensions();
   }
 
   private async initializeMap(): Promise<void> {
+    console.log('initializeMap');
+    
+    const mapElement = document.getElementById('map');
+    if (!mapElement) {
+      console.error('No se encontró el elemento del mapa');
+      return;
+    }
+
+    // Verificar dimensiones una vez más antes de inicializar
+    const rect = mapElement.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      console.error('El contenedor del mapa no tiene dimensiones válidas');
+      return;
+    }
+
     // Definir los límites de Valencia para que el mapa muestre toda el área
     const valenciaBounds: L.LatLngBoundsExpression = [
       [39.42, -0.42],  // Suroeste
       [39.52, -0.32]   // Noreste
     ];
     
-    // Inicializar mapa centrado en Valencia con zoom para mostrar toda el área
-    const map = L.map('map', {
-      center: [39.47, -0.37],
-      zoom: 11,
-      minZoom: 10,
-      maxZoom: 15,
-      maxBounds: valenciaBounds,
-      maxBoundsViscosity: 1.0
-    });
+    try {
+      // Inicializar mapa centrado en Valencia con zoom para mostrar toda el área
+      this.map = L.map('map', {
+        center: [39.47, -0.37],
+        zoom: 11,
+        minZoom: 10,
+        maxZoom: 15,
+        maxBounds: valenciaBounds,
+        maxBoundsViscosity: 1.0,
+        preferCanvas: false // Evitar problemas con canvas
+      });
   
-    // Capa base de OpenStreetMap con opacidad muy baja para que se vea principalmente el heatmap
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '',
-      maxZoom: 18,
-      opacity: 0.2  // Hacer el mapa base casi invisible
-    }).addTo(map);
-    
-    // Ajustar la vista para mostrar toda Valencia
-    map.fitBounds(valenciaBounds, { padding: [20, 20] });
+      // Esperar a que el mapa esté completamente inicializado
+      this.map.whenReady(() => {
+        // Capa base de OpenStreetMap con opacidad muy baja para que se vea principalmente el heatmap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '',
+          maxZoom: 18,
+          opacity: 0.2  // Hacer el mapa base casi invisible
+        }).addTo(this.map!);
+        
+        // Ajustar la vista para mostrar toda Valencia
+        this.map!.fitBounds(valenciaBounds, { padding: [20, 20] });
+        
+        // Invalidar el tamaño del mapa para asegurar que tenga dimensiones correctas
+        setTimeout(() => {
+          if (this.map) {
+            this.map.invalidateSize();
+          }
+        }, 100);
+        
+        // Inicializar el heatmap después de que el mapa esté listo
+        this.loadHeatmapData();
+        
+        // Manejar redimensionamiento de la ventana
+        this.resizeHandler = () => {
+          if (this.map) {
+            setTimeout(() => {
+              this.map!.invalidateSize();
+            }, 100);
+          }
+        };
+        window.addEventListener('resize', this.resizeHandler);
+      });
+    } catch (error) {
+      console.error('Error al inicializar el mapa:', error);
+    }
+  }
+
+  /**
+   * Carga los datos del heatmap después de que el mapa esté inicializado
+   */
+  private async loadHeatmapData(): Promise<void> {
+    if (!this.map) {
+      console.error('El mapa no está inicializado');
+      return;
+    }
   
     try {
       // Obtener datos de contaminación
@@ -51,7 +151,9 @@ export class Leaflet implements AfterViewInit {
       
       if (points.length === 0) {
         console.warn('No se encontraron datos de contaminación');
-        this.showNoDataMessage(map);
+        if (this.map) {
+          this.showNoDataMessage(this.map);
+        }
         return;
       }
 
@@ -71,33 +173,63 @@ export class Leaflet implements AfterViewInit {
         return;
       }
 
+      // Asegurarse de que el mapa tenga dimensiones válidas antes de crear el heatmap
+      const mapSize = this.map.getSize();
+      if (mapSize.x === 0 || mapSize.y === 0) {
+        console.warn('El mapa no tiene dimensiones válidas, esperando...');
+        setTimeout(() => this.loadHeatmapData(), 200);
+        return;
+      }
+
+      // Remover heatmap anterior si existe
+      if (this.heatLayer && this.map) {
+        this.map.removeLayer(this.heatLayer);
+      }
+
       // Crear capa de calor con configuración mejorada para ocupar toda Valencia
-      const heatLayer = (L as any).heatLayer(heatData, {
-        radius: 80,           // Radio de influencia muy amplio para cubrir toda el área
-        blur: 40,             // Difuminado más amplio
-        maxZoom: 15,          // Zoom máximo donde se muestra el efecto
-        max: 1.0,             // Valor máximo de intensidad
-        minOpacity: 1,      // Opacidad mínima más alta para mejor visualización
-        gradient: {           // Gradiente de colores más suave y realista
-          0.0: '#00ff00',     // Verde (buena calidad)
-          0.15: '#80ff00',   // Verde-amarillo
-          0.3: '#ffff00',    // Amarillo (moderada)
-          0.45: '#ffcc00',   // Amarillo-naranja
-          0.5: '#ff9900',    // Naranja (no saludable para grupos sensibles)
-          0.65: '#ff6600',   // Naranja-rojo
-          0.7: '#ff0000',    // Rojo (no saludable)
-          0.85: '#cc0066',   // Rojo-púrpura
-          0.9: '#990099',    // Púrpura (muy no saludable)
-          0.95: '#660066',   // Púrpura oscuro
-          1.0: '#330033'     // Marrón oscuro (peligroso)
+      try {
+        this.heatLayer = (L as any).heatLayer(heatData, {
+          radius: 80,           // Radio de influencia muy amplio para cubrir toda el área
+          blur: 40,             // Difuminado más amplio
+          maxZoom: 15,          // Zoom máximo donde se muestra el efecto
+          max: 1.0,             // Valor máximo de intensidad
+          minOpacity: 1,        // Opacidad mínima más alta para mejor visualización
+          gradient: {           // Gradiente de colores más suave y realista
+            0.0: '#00ff00',     // Verde (buena calidad)
+            0.15: '#80ff00',   // Verde-amarillo
+            0.3: '#ffff00',    // Amarillo (moderada)
+            0.45: '#ffcc00',   // Amarillo-naranja
+            0.5: '#ff9900',    // Naranja (no saludable para grupos sensibles)
+            0.65: '#ff6600',   // Naranja-rojo
+            0.7: '#ff0000',    // Rojo (no saludable)
+            0.85: '#cc0066',   // Rojo-púrpura
+            0.9: '#990099',    // Púrpura (muy no saludable)
+            0.95: '#660066',   // Púrpura oscuro
+            1.0: '#330033'     // Marrón oscuro (peligroso)
+          }
+        });
+
+        if (this.map && this.heatLayer) {
+          this.heatLayer.addTo(this.map);
         }
-      }).addTo(map);
 
-      // Añadir marcadores con información en cada estación
-      this.addStationMarkers(map, points);
+        // Añadir marcadores con información en cada estación
+        if (this.map) {
+          this.addStationMarkers(this.map, points);
+        }
 
-      // Añadir leyenda
-      this.addLegend(map);
+        // Añadir leyenda
+        if (this.map) {
+          this.addLegend(this.map);
+        }
+      } catch (heatError) {
+        console.error('Error al crear el heatmap:', heatError);
+        // Si hay un error con el heatmap, al menos mostrar los marcadores
+        if (this.map) {
+          this.addStationMarkers(this.map, points);
+          this.addLegend(this.map);
+        }
+      }
 
     } catch (error) {
       console.error('Error al cargar el mapa de calor:', error);
