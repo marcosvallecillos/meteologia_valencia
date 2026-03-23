@@ -1,0 +1,30 @@
+{
+  "/api": {
+    "target": "https://api.openaq.org",
+    "secure": true,
+    "changeOrigin": true,
+    "pathRewrite": {
+      "^/api": ""
+    },
+    "headers": {
+      "X-API-Key": "af5af16081b4ea158cb247750daf22a6640d9373b49ca41f623fcdbf952f7cb6"
+    },
+    "logLevel": "debug"
+  },
+  "/weather-api": {
+    "target": "https://api.openweathermap.org",
+    "secure": true,
+    "changeOrigin": true,
+    "pathRewrite": {
+      "^/weather-api": ""
+    }
+  },
+  "/waqi-api": {
+    "target": "https://api.waqi.info",
+    "secure": true,
+    "changeOrigin": true,
+    "pathRewrite": {
+      "^/waqi-api": ""
+    }
+  }
+}

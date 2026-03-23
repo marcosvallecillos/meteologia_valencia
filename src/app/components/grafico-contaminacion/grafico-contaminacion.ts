@@ -1,5 +1,6 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, ViewChild, ElementRef, computed, effect, signal } from '@angular/core';
-import { Chart, ChartType } from 'chart.js/auto';
+import Chart from 'chart.js/auto';
+import type { ChartType } from 'chart.js';
 import { ApiService, PollutionHistoryData } from '../../service/api-service.service';
 
 type TimeRange = '24h' | '7d' | '30d';
@@ -22,7 +23,15 @@ export class GraficoContaminacion implements OnInit, AfterViewInit, OnDestroy {
     // Reaccionar a cambios en los datos de contaminación o rango de tiempo
     const history = this.pollutionHistory();
     const timeRange = this.selectedTimeRange();
+    const globalDate = this.api.selectedDate(); // Reaccionar al cambio de fecha global
     
+    // Si la fecha global cambia, forzar recarga de datos si no es la primera vez
+    // (ngOnInit ya carga los datos inicialmente)
+    if (this.isViewReady) {
+       // Evitar recursión infinita: solo cargar si los datos no parecen venir de la fecha actual
+       // o simplemente confiar en que el efecto solo se dispara cuando cambian los signals
+    }
+
     if (this.isViewReady && history && history.length > 0) {
       // Verificar que el canvas esté disponible
       if (this.chartCanvas?.nativeElement) {
@@ -30,14 +39,15 @@ export class GraficoContaminacion implements OnInit, AfterViewInit, OnDestroy {
         setTimeout(() => {
           this.createChart(timeRange);
         }, 100);
-      } else {
-        // Si el canvas no está disponible, intentar de nuevo después de un breve delay
-        setTimeout(() => {
-          if (this.chartCanvas?.nativeElement && history && history.length > 0) {
-            this.createChart(timeRange);
-          }
-        }, 200);
       }
+    }
+  });
+
+  // Segundo efecto para manejar la carga de datos cuando cambia la fecha global
+  private dataLoadEffect = effect(() => {
+    const date = this.api.selectedDate();
+    if (this.isViewReady) {
+      this.loadDataForTimeRange(this.selectedTimeRange());
     }
   });
 

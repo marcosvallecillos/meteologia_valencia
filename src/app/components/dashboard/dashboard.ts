@@ -1,4 +1,4 @@
-import { Component, OnInit, computed } from '@angular/core';
+import { Component, OnInit, computed, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { Trafico } from '../trafico/trafico';
 import { ApiService } from '../../service/api-service.service';
@@ -7,11 +7,15 @@ import { Leaflet } from '../leaflet/leaflet';
 
 @Component({
   selector: 'app-dashboard',
-  imports: [Trafico, DecimalPipe,GraficoContaminacion,Leaflet ],
+  imports: [Trafico, DecimalPipe, GraficoContaminacion, Leaflet],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.css',
 })
 export class Dashboard implements OnInit {
+  
+  // Signal para el estado de carga
+  loading:boolean = false;
+
   readonly airQuality = computed(() => {
     const data = this.api.airQuality();
     if (data?.pollutants) {
@@ -36,21 +40,147 @@ export class Dashboard implements OnInit {
     return pm25?.value ?? 0;
   });
   
+  readonly selectedDate = computed(() => this.api.selectedDate());
+  readonly isFutureDate = signal<boolean>(false);
+  
   readonly otherPollutants = computed(() => {
     return this.airQuality()?.pollutants?.filter(p => p.name !== 'PM2.5') ?? [];
   }); 
+
   constructor(private readonly api: ApiService) {}
+
+  onDateChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (input.value) {
+      const selected = new Date(input.value);
+      const today = new Date();
+      // Solo comparar año, mes y día
+      today.setHours(0, 0, 0, 0);
+      
+      if (selected > today) {
+        this.isFutureDate.set(true);
+        this.api.setSelectedDate(input.value);
+        return;
+      }
+
+      this.isFutureDate.set(false);
+      this.api.setSelectedDate(input.value);
+      // Recargar datos para que afecte a toda la web
+      this.api.loadValenciaData();
+    }
+  }
 
   ngOnInit(): void {
     this.api.loadValenciaData();
   }
 
+  /**
+   * Calcula el porcentaje de un contaminante respecto a su valor máximo
+   */
   getPollutantPercentage(pollutant: { value: number; max?: number }): number {
     const max = pollutant.max ?? 100;
     if (max === 0) return 0;
     const percentage = (pollutant.value / max) * 100;
-    return Math.min(Math.max(percentage, 0), 100); // Asegurar que esté entre 0 y 100
+    return Math.min(Math.max(percentage, 0), 100);
   }
-}
 
+  /**
+   * Exporta los datos de contaminación a formato CSV
+   */
+  async exportarCSV(): Promise<void> {
+    this.loading = true;
+    try {
+      const datos = await this.api.fetchPollutionHeatmapValencia();
+      
+      if (!datos || datos.length === 0) {
+        console.warn('No hay datos disponibles para exportar');
+        alert('No hay datos de contaminación disponibles para exportar');
+        return;
+      }
+      
+      this.api.exportPollutionToCSV(datos, 'contaminacion_valencia');
+      this.loading = false;
 
+      console.log(`CSV exportado exitosamente: ${datos.length} registros`);
+      
+    } catch (error) {
+      console.error('Error al exportar CSV:', error);
+      alert('Hubo un error al generar el archivo CSV. Por favor, inténtalo de nuevo.');
+    } finally {
+        this.loading = false    } 
+  }
+
+  /**
+   * Exporta los datos de contaminación a formato PDF
+   */
+  async exportarPDF(): Promise<void> {
+      this.loading = true   
+       try {
+      const datos = await this.api.fetchPollutionHeatmapValencia();
+      
+      if (!datos || datos.length === 0) {
+        console.warn('No hay datos disponibles para exportar');
+        alert('No hay datos de contaminación disponibles para exportar');
+        return;
+      }
+      
+      this.api.exportPollutionToPDF(datos, 'contaminacion_valencia');
+      console.log(`PDF exportado exitosamente: ${datos.length} registros`);
+      this.loading = false;
+    } catch (error) {
+      console.error('Error al exportar PDF:', error);
+      alert('Hubo un error al generar el archivo PDF. Por favor, inténtalo de nuevo.');
+    } finally {
+        this.loading = false    }
+  }
+
+  /**
+   * Exporta datos filtrados por rango de valores PM2.5
+   */
+  async exportarPDFFiltrado(minValue?: number, maxValue?: number): Promise<void> {
+      this.loading = true
+      try {
+      const datos = await this.api.fetchPollutionHeatmapValencia();
+      
+      if (!datos || datos.length === 0) {
+        console.warn('No hay datos disponibles para exportar');
+        alert('No hay datos de contaminación disponibles');
+        return;
+      }
+
+      // Filtrar datos por rango
+      let datosFiltrados = datos;
+      if (minValue !== undefined || maxValue !== undefined) {
+        datosFiltrados = datos.filter(point => {
+          const withinMin = minValue === undefined || point.value >= minValue;
+          const withinMax = maxValue === undefined || point.value <= maxValue;
+          return withinMin && withinMax;
+        });
+      }
+
+      if (datosFiltrados.length === 0) {
+        alert('No hay datos que cumplan los criterios de filtrado');
+        return;
+      }
+      
+      this.api.exportPollutionToPDF(datosFiltrados, 'contaminacion_valencia_filtrado');
+      console.log(`PDF filtrado exportado: ${datosFiltrados.length} de ${datos.length} registros`);
+      
+    } catch (error) {
+      console.error('Error al exportar PDF filtrado:', error);
+      alert('Hubo un error al generar el archivo PDF filtrado.');
+    } finally {
+        this.loading = false    }
+  }
+
+  /**
+   * Obtiene la fecha actual en formato YYYY-MM-DD
+   */
+  getCurrentDate(): string {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+} 

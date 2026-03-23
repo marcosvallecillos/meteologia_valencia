@@ -24,6 +24,19 @@
   display: flex;
   gap: 8px;
 }
+@media (max-width: 375px) {
+  .time-range-buttons{
+    content: attr(data-label);  /* "24h", "7d", "30d" */
+  position: absolute;
+  bottom: 72%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  }
+  .chart-container{
+    margin-top: 50px;
+  }
+}
 
 .time-button {
   padding: 6px 12px;

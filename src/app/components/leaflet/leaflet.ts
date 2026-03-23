@@ -1,4 +1,4 @@
-import { Component, AfterViewInit, ViewChild, ElementRef, OnDestroy } from '@angular/core';
+import { Component, AfterViewInit, ViewChild, ElementRef, OnDestroy, effect } from '@angular/core';
 import * as L from 'leaflet';
 import 'leaflet.heat';
 import { ApiService, PollutionHeatmapPoint } from '../../service/api-service.service';
@@ -15,9 +15,18 @@ export class Leaflet implements AfterViewInit, OnDestroy {
   
   private map: L.Map | null = null;
   private heatLayer: any = null;
+  private markers: L.Layer[] = [];
   private resizeHandler?: () => void;
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService) {
+    // Escuchar cambios en la fecha seleccionada para recargar el heatmap
+    effect(() => {
+      const date = this.api.selectedDate();
+      if (this.map) {
+        this.loadHeatmapData(date);
+      }
+    });
+  }
 
   ngAfterViewInit(): void {
     // Esperar a que el DOM esté completamente renderizado y el contenedor tenga dimensiones
@@ -119,7 +128,7 @@ export class Leaflet implements AfterViewInit, OnDestroy {
         }, 100);
         
         // Inicializar el heatmap después de que el mapa esté listo
-        this.loadHeatmapData();
+        this.loadHeatmapData(this.api.selectedDate());
         
         // Manejar redimensionamiento de la ventana
         this.resizeHandler = () => {
@@ -139,15 +148,19 @@ export class Leaflet implements AfterViewInit, OnDestroy {
   /**
    * Carga los datos del heatmap después de que el mapa esté inicializado
    */
-  private async loadHeatmapData(): Promise<void> {
+  private async loadHeatmapData(date?: string): Promise<void> {
     if (!this.map) {
       console.error('El mapa no está inicializado');
       return;
     }
   
     try {
-      // Obtener datos de contaminación
-      const points = await this.api.fetchPollutionHeatmapValencia();
+      // Remover marcadores anteriores si existen
+      this.markers.forEach(marker => marker.remove());
+      this.markers = [];
+
+      // Obtener datos de contaminación para la fecha seleccionada
+      const points = await this.api.fetchPollutionHeatmapValencia(date);
       
       if (points.length === 0) {
         console.warn('No se encontraron datos de contaminación');
@@ -271,12 +284,15 @@ export class Leaflet implements AfterViewInit, OnDestroy {
    */
   private addStationMarkers(map: L.Map, points: PollutionHeatmapPoint[]) {
     
-    const mainStations = points.slice(0, Math.min(18, points.length));
+    // Usar estaciones con ubicación (barrio) definida
+    const mainStations = points.filter(p => !p.lat.toString().includes('variation')).slice(0, 25);
     
-    mainStations.forEach((point, index) => {
+    points.forEach((point, index) => {
+      // Solo poner marcadores en los puntos principales (que tienen nombre de ubicación)
+      if (!point.location || point.location === 'Valencia') return;
+
       const qualityLevel = this.getAirQualityLevel(point.value);
       
-      // Crear marcador más visible y atractivo
       const marker = L.circleMarker([point.lat, point.lng], {
         radius: 8,
         fillColor: qualityLevel.color,
@@ -286,27 +302,10 @@ export class Leaflet implements AfterViewInit, OnDestroy {
         fillOpacity: 0.9
       });
 
-      // Agregar animación al pasar el mouse
-      marker.on('mouseover', function(this: L.CircleMarker) {
-        this.setStyle({
-          radius: 10,
-          weight: 4
-        });
-      });
-      
-      marker.on('mouseout', function(this: L.CircleMarker) {
-        this.setStyle({
-          radius: 8,
-          weight: 3
-        });
-      });
-
-      // Popup mejorado con más información
-      // Popup para mostrar la estacion
       marker.bindPopup(`
         <div style="text-align: center; min-width: 150px;">
           <div style="font-size: 16px; font-weight: bold; margin-bottom: 8px;">
-            Estación ${index + 1}
+            ${point.location}
           </div>
           <div style="font-size: 20px; font-weight: bold; color: ${qualityLevel.color}; margin-bottom: 5px;">
             ${point.value.toFixed(1)} µg/m³
@@ -325,6 +324,7 @@ export class Leaflet implements AfterViewInit, OnDestroy {
       });
 
       marker.addTo(map);
+      this.markers.push(marker);
     });
   }
 
@@ -378,4 +378,5 @@ export class Leaflet implements AfterViewInit, OnDestroy {
       .setContent('<strong>No hay datos de contaminación disponibles</strong>')
       .openOn(map);
   }
+
 }

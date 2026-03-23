@@ -3,7 +3,20 @@
     <div>
       <h1>Valencia, España</h1>
       <p>Monitoreo en tiempo real de calidad ambiental y tráfico</p>
-      <p class="updated-at">Actualizado: {{ airQuality()?.lastUpdated || '--' }}</p>
+      <div class="header-status-row">
+        <p class="updated-at">Actualizado: {{ airQuality()?.lastUpdated || '--' }}</p>
+        <div class="date-selector header-date">
+          <label for="pollution-date">Consultar fecha:</label>
+          <input 
+            type="date" 
+            id="pollution-date" 
+            [value]="selectedDate()" 
+            (change)="onDateChange($event)"
+            [max]="getCurrentDate()"
+            min="2016-01-01"
+          >
+        </div>
+      </div>
     </div>
     <div class="air-index-card">
       <span>Índice de Calidad del Aire</span>
@@ -12,7 +25,14 @@
     </div>
   </header>
 
-  <section class="summary-grid">
+  @if (isFutureDate()) {
+    <div class="future-date-warning">
+      <i class="fa-solid fa-calendar-xmark"></i>
+      <h2>Ese año no ha sucedido aún</h2>
+      <p>Por favor, selecciona una fecha actual o pasada para ver los datos de Valencia.</p>
+    </div>
+  } @else {
+    <section class="summary-grid">
     <article class="card">
       <div class="title-container">
         <i class="fa-solid fa-cloud pollution-icon"></i>
@@ -89,8 +109,38 @@
 
     <article class="card large">
       <h2>Mapa de Calor - Contaminación</h2>
-<app-leaflet></app-leaflet>    </article>
-  </section>
-
+      <div class="btn-export-container">
+      <button
+      class="btn-export"
+      (click)="exportarCSV()"
+      [disabled]="loading">
+      @if(loading) {
+        <span >Generando...</span>
+      }@else { 
+        <span >Exportar datos <i class="fa-solid fa-arrow-up-from-bracket" style="margin-left: 10px;"></i>
+        </span>
+        
+  
+      }
+    </button>
+    <button
+      class="btn-export-pdf"  
+      (click)="exportarPDF()"
+      [disabled]="loading">
+      @if(loading) {
+        <span >Generando...</span>
+      }@else { 
+        <span >Exportar datos PDF <i class="fa-solid fa-arrow-up-from-bracket" style="margin-left: 10px;"></i>
+        </span>
+        
+  
+      }
+    </button>
+    </div>
+    <div class="leaflet">
+<app-leaflet></app-leaflet>   
+</div> </article>
+    </section>
+  }
 </div>
 
