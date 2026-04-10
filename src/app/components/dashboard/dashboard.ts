@@ -14,7 +14,7 @@ import { Leaflet } from '../leaflet/leaflet';
 export class Dashboard implements OnInit {
   
   // Signal para el estado de carga
-  loading:boolean = false;
+  readonly loading = signal<boolean>(false);
 
   readonly airQuality = computed(() => {
     const data = this.api.airQuality();
@@ -43,9 +43,24 @@ export class Dashboard implements OnInit {
   readonly selectedDate = computed(() => this.api.selectedDate());
   readonly isFutureDate = signal<boolean>(false);
   
+  readonly weatherIcon = computed(() => {
+    const temp = this.weather()?.temperature ?? 20;
+    if (temp < 15) return 'fa-cloud';
+    if (temp < 22) return 'fa-cloud-sun';
+    return 'fa-sun';
+  });
+
+  readonly weatherColor = computed(() => {
+    const temp = this.weather()?.temperature ?? 20;
+    if (temp < 15) return '#94a3b8'; // Slate
+    if (temp < 22) return '#fbbf24'; // Amber
+    return '#f59e0b'; // Orange
+  });
+
   readonly otherPollutants = computed(() => {
     return this.airQuality()?.pollutants?.filter(p => p.name !== 'PM2.5') ?? [];
   }); 
+
 
   constructor(private readonly api: ApiService) {}
 
@@ -88,7 +103,8 @@ export class Dashboard implements OnInit {
    * Exporta los datos de contaminación a formato CSV
    */
   async exportarCSV(): Promise<void> {
-    this.loading = true;
+    if (this.loading()) return;
+    this.loading.set(true);
     try {
       const datos = await this.api.fetchPollutionHeatmapValencia();
       
@@ -99,23 +115,23 @@ export class Dashboard implements OnInit {
       }
       
       this.api.exportPollutionToCSV(datos, 'contaminacion_valencia');
-      this.loading = false;
-
       console.log(`CSV exportado exitosamente: ${datos.length} registros`);
       
     } catch (error) {
       console.error('Error al exportar CSV:', error);
       alert('Hubo un error al generar el archivo CSV. Por favor, inténtalo de nuevo.');
     } finally {
-        this.loading = false    } 
+      this.loading.set(false);
+    } 
   }
 
   /**
    * Exporta los datos de contaminación a formato PDF
    */
   async exportarPDF(): Promise<void> {
-      this.loading = true   
-       try {
+    if (this.loading()) return;
+    this.loading.set(true);
+    try {
       const datos = await this.api.fetchPollutionHeatmapValencia();
       
       if (!datos || datos.length === 0) {
@@ -124,22 +140,23 @@ export class Dashboard implements OnInit {
         return;
       }
       
-      this.api.exportPollutionToPDF(datos, 'contaminacion_valencia');
+      await this.api.exportPollutionToPDF(datos, 'contaminacion_valencia');
       console.log(`PDF exportado exitosamente: ${datos.length} registros`);
-      this.loading = false;
     } catch (error) {
       console.error('Error al exportar PDF:', error);
       alert('Hubo un error al generar el archivo PDF. Por favor, inténtalo de nuevo.');
     } finally {
-        this.loading = false    }
+      this.loading.set(false);
+    }
   }
 
   /**
    * Exporta datos filtrados por rango de valores PM2.5
    */
   async exportarPDFFiltrado(minValue?: number, maxValue?: number): Promise<void> {
-      this.loading = true
-      try {
+    if (this.loading()) return;
+    this.loading.set(true);
+    try {
       const datos = await this.api.fetchPollutionHeatmapValencia();
       
       if (!datos || datos.length === 0) {
@@ -163,14 +180,15 @@ export class Dashboard implements OnInit {
         return;
       }
       
-      this.api.exportPollutionToPDF(datosFiltrados, 'contaminacion_valencia_filtrado');
+      await this.api.exportPollutionToPDF(datosFiltrados, 'contaminacion_valencia_filtrado');
       console.log(`PDF filtrado exportado: ${datosFiltrados.length} de ${datos.length} registros`);
       
     } catch (error) {
       console.error('Error al exportar PDF filtrado:', error);
       alert('Hubo un error al generar el archivo PDF filtrado.');
     } finally {
-        this.loading = false    }
+      this.loading.set(false);
+    }
   }
 
   /**

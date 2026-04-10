@@ -19,9 +19,15 @@
       </div>
     </div>
     <div class="air-index-card">
-      <span>Índice de Calidad del Aire</span>
-      <strong>{{ airQuality()?.aqi ?? '--' }}</strong>
-      <span class="badge">{{ airQuality()?.category || 'Sin datos' }}</span>
+      <span class="card-subtitle">Tiempo en Valencia</span>
+      <div class="header-temp-container" [style.color]="weatherColor()">
+        <i class="fa-solid {{ weatherIcon() }}"></i>
+        <span class="temp-value">{{ (weather()?.temperature ?? 0) | number : '1.1-1' }}°C</span>
+      </div>
+      <div class="badge-row">
+        <span class="badge">{{ airQuality()?.category || 'Sin datos' }}</span>
+       
+      </div>
     </div>
   </header>
 
@@ -103,18 +109,21 @@
 
   <section class="bottom-grid">
     <article class="card large">
-      <h2>Evolución de Contaminación</h2>
+      
       <app-grafico-contaminacion></app-grafico-contaminacion>
     </article>
 
     <article class="card large">
-      <h2>Mapa de Calor - Contaminación</h2>
+      <div class="title-container">
+        <h2>Mapa de Calor - Contaminación</h2>
+       
+      </div>
       <div class="btn-export-container">
       <button
       class="btn-export"
       (click)="exportarCSV()"
-      [disabled]="loading">
-      @if(loading) {
+      [disabled]="loading()">
+      @if(loading()) {
         <span >Generando...</span>
       }@else { 
         <span >Exportar datos <i class="fa-solid fa-arrow-up-from-bracket" style="margin-left: 10px;"></i>
@@ -126,8 +135,8 @@
     <button
       class="btn-export-pdf"  
       (click)="exportarPDF()"
-      [disabled]="loading">
-      @if(loading) {
+      [disabled]="loading()">
+      @if(loading()) {
         <span >Generando...</span>
       }@else { 
         <span >Exportar datos PDF <i class="fa-solid fa-arrow-up-from-bracket" style="margin-left: 10px;"></i>

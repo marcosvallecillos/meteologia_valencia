@@ -24,6 +24,7 @@ export interface WeatherSummary {
   rainProbability: number;
   humidity: number;
   rain24h: number;
+  dataSource?: 'real' | 'simulated';
 }
 
 export interface TrafficStreet {
@@ -35,6 +36,7 @@ export interface TrafficSummary {
   overallCongestion: number;
   category: string;
   streets: TrafficStreet[];
+  dataSource?: 'real' | 'simulated';
 }
 
 export interface PollutionHistoryData {
@@ -58,8 +60,8 @@ export interface PollutionHeatmapPoint {
 })
 export class ApiService {
   // En un proyecto real deberías mover estas claves a variables de entorno
-  private readonly aqicnToken = '/api.waqi.info/feed/here/?token=041a4eeeb23d0664c5486010da80c847e5cbb3b5';
-  private readonly openWeatherKey = '/api.openweathermap.org/data/2.5/weather?q=Valencia,ES&units=metric&appid=91cf68f7f32d876ccbcce3f0b3bcd63a';
+  private readonly aqicnToken = 'https://api.waqi.info/feed/here/?token=041a4eeeb23d0664c5486010da80c847e5cbb3b5';
+  private readonly openWeatherKey = 'https://api.openweathermap.org/data/2.5/weather?q=Valencia,ES&units=metric&appid=91cf68f7f32d876ccbcce3f0b3bcd63a';
   private readonly http = inject(HttpClient);
   private readonly airQualitySignal = signal<AirQualitySummary | null>(null);
   private readonly weatherSignal = signal<WeatherSummary | null>(null);
@@ -157,7 +159,7 @@ export class ApiService {
               const paramName: string = sensor.parameter?.name?.toLowerCase() || '';
               if (!['pm25', 'pm10', 'no2', 'o3', 'pm2.5'].includes(paramName)) continue;
 
-              const measUrl = `/api/v3/sensors/${sensor.id}/measurements?date_from=${targetDate}T00:00:00Z&date_to=${targetDate}T23:59:59Z&limit=24`;
+              const measUrl = `/api/v3/sensors/${sensor.id}/measurements?datetime_from=${targetDate}T00:00:00Z&datetime_to=${targetDate}T23:59:59Z&limit=24`;
               const measJson: any = await this.http.get(measUrl).toPromise().catch(() => null);
               const vals = measJson?.results?.map((r: any) => r.value).filter((v: any) => v != null) ?? [];
               const avg = vals.length > 0 ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : null;
@@ -270,8 +272,8 @@ export class ApiService {
     }
 
     try {
-      // Usar datos simulados si no es hoy o si no hay API key válida
-      if (!isToday || this.openWeatherKey.includes('appid=91cf68f7f32d87')) {
+      // Usar datos simulados solo si no es hoy
+      if (!isToday) {
         const dateSeed = targetDate.split('-').reduce((a: number, b: string) => a + parseInt(b), 0);
         const variation = (seed: number) => 0.8 + ((seed + dateSeed) % 40) / 100;
 
@@ -281,11 +283,15 @@ export class ApiService {
           rainProbability: Math.round(45 * variation(35)),
           humidity: Math.round(68 * variation(45)),
           rain24h: parseFloat((8.7 * variation(55)).toFixed(1)),
+          dataSource: 'simulated'
         });
         return;
       }
 
+      // Extraer el appid de la URL definida arriba
       const key = this.openWeatherKey.split('appid=')[1];
+      if (!key) throw new Error('No se pudo extraer la clave de OpenWeather');
+      
       const url = `/weather-api/data/2.5/weather?q=Valencia,ES&units=metric&appid=${key}&lang=es`;
       
       const json: any = await this.http.get(url).toPromise();
@@ -299,9 +305,18 @@ export class ApiService {
         rainProbability: pop,
         humidity: json?.main?.humidity ?? 0,
         rain24h: json?.rain?.['3h'] ? json.rain['3h'] * 8 : 0,
+        dataSource: 'real'
       });
     } catch (e) {
       console.error('[ApiService] Error loading weather data', e);
+      this.weatherSignal.set({
+        temperature: 20,
+        rain: 0,
+        rainProbability: 10,
+        humidity: 60,
+        rain24h: 0,
+        dataSource: 'simulated'
+      });
     }
   }
 
@@ -329,6 +344,7 @@ export class ApiService {
           { name: 'Gran Vía', congestion: Math.round(68 * variation(25)) },
           { name: 'Blasco Ibáñez', congestion: Math.round(52 * variation(35)) },
         ],
+        dataSource: 'simulated'
       });
     } catch (e) {
       console.error('Error al obtener tráfico', e);
@@ -356,65 +372,78 @@ export class ApiService {
       const startDate = new Date(endDate);
       startDate.setDate(startDate.getDate() - days);
 
-      // Paso 1: Buscar ubicaciones usando OpenAQ v3
-      const locUrl = `/api/v3/locations?coordinates=39.4699,-0.3763&radius=25000&limit=5`;
+      console.log(`[ApiService] Buscando historia real desde ${startDate.toISOString()} hasta ${endDate.toISOString()}`);
+
+      // Paso 1: Buscar varias ubicaciones cercanas para tener más sensores
+      const locUrl = `/api/v3/locations?coordinates=39.4699,-0.3763&radius=25000&limit=8`;
       const locJson: any = await this.http.get(locUrl).toPromise().catch(() => null);
 
       if (locJson?.results?.length > 0) {
-        const locId: number = locJson.results[0].id;
+        const dataByDate = new Map<string, { pm25: number[]; pm10: number[]; no2: number[]; o3: number[] }>();
+        
+        // Procesar hasta 5 localizaciones para asegurar diversidad de datos
+        const locations = locJson.results.slice(0, 5);
+        
+        for (const loc of locations) {
+          // Paso 2: Obtener sensores de esta localización
+          const sensUrl = `/api/v3/locations/${loc.id}/sensors`;
+          const sensJson: any = await this.http.get(sensUrl).toPromise().catch(() => null);
 
-        // Paso 2: Obtener sensores de esa localizacion
-        const sensUrl = `/api/v3/locations/${locId}/sensors`;
-        const sensJson: any = await this.http.get(sensUrl).toPromise().catch(() => null);
+          if (sensJson?.results?.length > 0) {
+            for (const sensor of sensJson.results) {
+              const paramName = sensor.parameter?.name?.toLowerCase() || '';
+              if (!['pm25', 'pm2.5', 'pm10', 'no2', 'o3'].includes(paramName)) continue;
 
-        if (sensJson?.results?.length > 0) {
-          const dataByDate = new Map<string, { pm25: number[]; pm10: number[]; no2: number[]; o3: number[] }>();
+              // Paso 3: Pedir mediciones históricas
+              const measUrl = `/api/v3/sensors/${sensor.id}/measurements?datetime_from=${startDate.toISOString()}&datetime_to=${endDate.toISOString()}&limit=500`;
+              const measJson: any = await this.http.get(measUrl).toPromise().catch(() => null);
 
-          for (const sensor of sensJson.results) {
-            const paramName: string = sensor.parameter?.name?.toLowerCase() || '';
-            if (!['pm25', 'pm2.5', 'pm10', 'no2', 'o3'].includes(paramName)) continue;
+              measJson?.results?.forEach((r: any) => {
+                const dateStr = new Date(r.period?.datetimeTo?.utc || r.date?.utc || '').toISOString().split('T')[0];
+                if (!dateStr || dateStr === 'Invalid') return;
 
-            // Paso 3: Pedir mediciones históricas de cada sensor
-            const measUrl = `/api/v3/sensors/${sensor.id}/measurements?date_from=${startDate.toISOString()}&date_to=${endDate.toISOString()}&limit=500`;
-            const measJson: any = await this.http.get(measUrl).toPromise().catch(() => null);
+                if (!dataByDate.has(dateStr)) dataByDate.set(dateStr, { pm25: [], pm10: [], no2: [], o3: [] });
+                const d = dataByDate.get(dateStr)!;
 
-            measJson?.results?.forEach((r: any) => {
-              const dateStr = new Date(r.period?.datetimeTo?.utc || r.date?.utc || '').toISOString().split('T')[0];
-              if (!dateStr || dateStr === 'Invalid') return;
-
-              if (!dataByDate.has(dateStr)) dataByDate.set(dateStr, { pm25: [], pm10: [], no2: [], o3: [] });
-              const d = dataByDate.get(dateStr)!;
-
-              const v = r.value;
-              if (v == null) return;
-              if (paramName === 'pm25' || paramName === 'pm2.5') d.pm25.push(v);
-              else if (paramName === 'pm10') d.pm10.push(v);
-              else if (paramName === 'no2') d.no2.push(v);
-              else if (paramName === 'o3') d.o3.push(v);
-            });
-          }
-
-          if (dataByDate.size > 0) {
-            const avg = (arr: number[], def: number) =>
-              arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : def;
-
-            const history: PollutionHistoryData[] = [];
-            dataByDate.forEach((vals, date) => {
-              history.push({
-                date,
-                pm25: avg(vals.pm25, 45),
-                pm10: avg(vals.pm10, 62),
-                no2: avg(vals.no2, 38),
-                o3: avg(vals.o3, 72),
+                const v = r.value;
+                if (v == null || v < 0) return;
+                
+                if (paramName === 'pm25' || paramName === 'pm2.5') d.pm25.push(v);
+                else if (paramName === 'pm10') d.pm10.push(v);
+                else if (paramName === 'no2') d.no2.push(v);
+                else if (paramName === 'o3') d.o3.push(v);
               });
-            });
-            history.sort((a, b) => a.date.localeCompare(b.date));
-            this.pollutionHistorySignal.set(history);
-            return;
+            }
           }
+        }
+
+        if (dataByDate.size > 0) {
+          const avg = (arr: number[], def: number) =>
+            arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : def;
+
+          const history: PollutionHistoryData[] = [];
+          dataByDate.forEach((vals, date) => {
+            history.push({
+              date,
+              pm25: avg(vals.pm25, 10),
+              pm10: avg(vals.pm10, 20),
+              no2: avg(vals.no2, 15),
+              o3: avg(vals.o3, 30),
+            });
+          });
+          
+          history.sort((a, b) => a.date.localeCompare(b.date));
+          
+          // Si tenemos muy pocos días (OpenAQ a veces solo tiene los últimos 2-3 días indexados en v3)
+          // permitimos que se muestren pero avisamos en log
+          console.log(`[ApiService] Encontrados ${history.length} días con datos reales.`);
+          
+          this.pollutionHistorySignal.set(history);
+          return;
         }
       }
 
+      console.warn('[ApiService] No se encontraron datos históricos reales en OpenAQ. Usando simulación.');
       this.generateSimulatedHistory(days);
     } catch (e) {
       console.error('[ApiService] Error loading pollution history', e);
@@ -455,28 +484,37 @@ export class ApiService {
     const targetDate = date || this.selectedDateSignal();
 
     try {
-      // OpenAQ v3: buscar todas las ubicaciones en el area de Valencia
-      const locUrl = `/api/v3/locations?coordinates=39.4699,-0.3763&radius=50000&limit=100`;
+      // OpenAQ v3: buscar todas las ubicaciones en el área de Valencia
+      const locUrl = `/api/v3/locations?coordinates=39.4699,-0.3763&radius=25000&limit=25`;
       const locJson: any = await this.http.get(locUrl).toPromise().catch(() => null);
 
       if (locJson?.results?.length > 0) {
         const points: PollutionHeatmapPoint[] = [];
+        const limitedResults = locJson.results.slice(0, 20);
 
-        // Para cada ubicacion, obtener su ultima lectura de PM2.5
-        for (const loc of locJson.results.slice(0, 20)) {
+        const latestPromises = limitedResults.map((loc: any) => {
           const lat = loc.coordinates?.latitude;
           const lng = loc.coordinates?.longitude;
-          if (!lat || !lng) continue;
+          if (!lat || !lng) return Promise.resolve(null);
 
           const latestUrl = `/api/v3/locations/${loc.id}/latest`;
-          const latJson: any = await this.http.get(latestUrl).toPromise().catch(() => null);
-          const pm25 = latJson?.results?.find((r: any) =>
-            r.parameter?.name?.toLowerCase() === 'pm25' || r.parameter?.name?.toLowerCase() === 'pm2.5'
-          );
-          if (pm25?.value != null && pm25.value > 0) {
-            points.push({ lat, lng, value: Math.round(pm25.value), location: loc.name || 'Valencia' });
-          }
-        }
+          return this.http.get(latestUrl).toPromise()
+            .then((latJson: any) => {
+              const pm25 = latJson?.results?.find((r: any) =>
+                r.parameter?.name?.toLowerCase() === 'pm25' || r.parameter?.name?.toLowerCase() === 'pm2.5'
+              );
+              if (pm25?.value != null && pm25.value > 0) {
+                return { lat, lng, value: Math.round(pm25.value), location: loc.name || 'Valencia' };
+              }
+              return null;
+            })
+            .catch(() => null);
+        });
+
+        const results = await Promise.all(latestPromises);
+        results.forEach(p => {
+          if (p) points.push(p);
+        });
 
         if (points.length > 0) {
           const interpolated = this.interpolatePoints(points);
@@ -601,12 +639,14 @@ private interpolatePoints(mainPoints: PollutionHeatmapPoint[]): PollutionHeatmap
 
   private async fetchFromAEMET(): Promise<PollutionHeatmapPoint[]> {
     try {
-      const AEMET_API_KEY = 'TU_AEMET_API_KEY';
-      const url = `https://opendata.aemet.es/opendata/api/red/especial/contaminacionfondo/estacion/8414A`;
+      const AEMET_API_KEY = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJtYXJjb3N2YWxsZWNpbGxvc3VAZ21haWwuY29tIiwianRpIjoiMTkyMWZkNjAtODc3YS00ZjNiLTljOTItN2NlMTcwOWM2MGY0IiwiaXNzIjoiQUVNRVQiLCJpYXQiOjE3NzU2NTk3MjksInVzZXJJZCI6IjE5MjFmZDYwLTg3N2EtNGYzYi05YzkyLTdjZTE3MDljNjBmNCIsInJvbGUiOiIifQ.-nphLp1jLYV1wX352-Ts2BLWZNAdkoB5x69zFZDCxv8';
+      const url = 'https://opendata.aemet.es/opendata/api/red/especial/contaminacionfondo/estacion/8414A';
       
       const json: any = await this.http.get(url, {
         headers: { 'api_key': AEMET_API_KEY }
       }).toPromise();
+
+      console.log("[AEMET] Response:", json);
       
       if (json?.estado === 200 && json.datos) {
         const measurements: any = await this.http.get(json.datos).toPromise();
@@ -631,9 +671,12 @@ private interpolatePoints(mainPoints: PollutionHeatmapPoint[]): PollutionHeatmap
 
   private async fetchFromIQAir(): Promise<PollutionHeatmapPoint[]> {
     try {
-      const API_KEY = 'TU_IQAIR_API_KEY';
+      const API_KEY = 'b80f7bd6-3380-4097-970c-61919a240ecf'; // Tu clave de IQAir
+      if (!API_KEY) return [];
       const url = `https://api.airvisual.com/v2/city?city=Valencia&state=Valencia&country=Spain&key=${API_KEY}`;
-      
+      this.http.get(url).subscribe(data => {
+  console.log('Datos AQI Valencia:', data);
+});
       const json: any = await this.http.get(url).toPromise();
 
       if (json?.status === 'success' && json.data) {
