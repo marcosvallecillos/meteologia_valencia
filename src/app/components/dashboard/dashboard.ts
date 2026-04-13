@@ -4,10 +4,11 @@ import { Trafico } from '../trafico/trafico';
 import { ApiService } from '../../service/api-service.service';
 import { GraficoContaminacion } from '../grafico-contaminacion/grafico-contaminacion';
 import { Leaflet } from '../leaflet/leaflet';
+import { Pronostico } from '../pronostico/pronostico';
 
 @Component({
   selector: 'app-dashboard',
-  imports: [Trafico, DecimalPipe, GraficoContaminacion, Leaflet],
+  imports: [Trafico, DecimalPipe, GraficoContaminacion, Leaflet, Pronostico],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.css',
 })

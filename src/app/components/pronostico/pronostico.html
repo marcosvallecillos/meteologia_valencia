@@ -1,0 +1,38 @@
+<article class="forecast-container">
+  <div class="title-container">
+    <i class="fa-solid fa-calendar-days forecast-icon"></i>
+    <h2>Predicción próximos 7 días</h2>
+  </div>
+
+  <div class="forecast-grid">
+    @for (day of forecast(); track day.date) {
+      <div class="forecast-card">
+        <span class="day-name">{{ day.dayName }}</span>
+        <span class="date">{{ day.date | date: 'dd MMM' }}</span>
+        
+        <div class="weather-icon-container">
+          <i class="fa-solid {{ day.icon }}"></i>
+        </div>
+
+        <p class="description">{{ day.description }}</p>
+
+        <div class="temp-range">
+          <span class="temp max" [style.color]="getTempColor(day.tempMax)">
+            {{ day.tempMax | number: '1.0-0' }}°
+          </span>
+          <span class="temp-divider">/</span>
+          <span class="temp min" [style.color]="getTempColor(day.tempMin)">
+            {{ day.tempMin | number: '1.0-0' }}°
+          </span>
+        </div>
+
+        @if (day.rainProbability > 0) {
+          <div class="rain-chance">
+            <i class="fa-solid fa-droplet"></i>
+            <span>{{ day.rainProbability }}%</span>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</article>

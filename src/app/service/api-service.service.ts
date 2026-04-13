@@ -18,6 +18,16 @@ export interface AirQualitySummary {
   locationName?: string;
 }
 
+export interface WeatherForecastDay {
+  date: string;
+  dayName: string;
+  tempMin: number;
+  tempMax: number;
+  rainProbability: number;
+  icon: string;
+  description: string;
+}
+
 export interface WeatherSummary {
   temperature: number;
   rain: number;
@@ -62,21 +72,43 @@ export class ApiService {
   // En un proyecto real deberías mover estas claves a variables de entorno
   private readonly aqicnToken = 'https://api.waqi.info/feed/here/?token=041a4eeeb23d0664c5486010da80c847e5cbb3b5';
   private readonly openWeatherKey = 'https://api.openweathermap.org/data/2.5/weather?q=Valencia,ES&units=metric&appid=91cf68f7f32d876ccbcce3f0b3bcd63a';
+  private readonly aemetKey = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJtYXJjb3N2YWxsZWNpbGxvc3VAZ21haWwuY29tIiwianRpIjoiMTkyMWZkNjAtODc3YS00ZjNiLTljOTItN2NlMTcwOWM2MGY0IiwiaXNzIjoiQUVNRVQiLCJpYXQiOjE3NzU2NTk3MjksInVzZXJJZCI6IjE5MjFmZDYwLTg3N2EtNGYzYi05YzkyLTdjZTE3MDljNjBmNCIsInJvbGUiOiIifQ.-nphLp1jLYV1wX352-Ts2BLWZNAdkoB5x69zFZDCxv8';
+  private readonly valenciaId = '46250';
   private readonly http = inject(HttpClient);
   private readonly airQualitySignal = signal<AirQualitySummary | null>(null);
   private readonly weatherSignal = signal<WeatherSummary | null>(null);
   private readonly trafficSignal = signal<TrafficSummary | null>(null);
   private readonly pollutionHistorySignal = signal<PollutionHistoryData[]>([]);
+  private readonly forecastSignal = signal<WeatherForecastDay[]>([]);
   private readonly selectedDateSignal = signal<string>(new Date().toISOString().split('T')[0]);
 
   readonly airQuality = computed(() => this.airQualitySignal());
   readonly weather = computed(() => this.weatherSignal());
   readonly traffic = computed(() => this.trafficSignal());
   readonly pollutionHistory = computed(() => this.pollutionHistorySignal());
+  readonly forecast = computed(() => this.forecastSignal());
   readonly selectedDate = computed(() => this.selectedDateSignal());
 
   setSelectedDate(date: string): void {
     this.selectedDateSignal.set(date);
+  }
+
+  private async fetchAemetData(endpoint: string): Promise<any> {
+    const url = `https://opendata.aemet.es/opendata/api/${endpoint}`;
+    try {
+      const response: any = await this.http.get(url, {
+        headers: { 'api_key': this.aemetKey }
+      }).toPromise();
+
+      if (response?.estado === 200 && response.datos) {
+        // AEMET devuelve una URL temporal con los datos reales
+        return await this.http.get(response.datos).toPromise();
+      }
+      throw new Error(`AEMET Error: ${response?.descripcion || 'Unknown error'}`);
+    } catch (error) {
+      console.error(`[ApiService] Error fetching AEMET data from ${endpoint}:`, error);
+      throw error;
+    }
   }
 
   async loadValenciaData(): Promise<void> {
@@ -84,6 +116,7 @@ export class ApiService {
       this.fetchAirQualityValencia(),
       this.fetchWeatherValencia(),
       this.fetchTrafficValencia(),
+      this.fetchForecastValencia(),
     ]);
   }
 
@@ -279,44 +312,84 @@ export class ApiService {
 
         this.weatherSignal.set({
           temperature: Math.round(16 * variation(15)),
-          rain: parseFloat((2.4 * variation(25)).toFixed(1)),
-          rainProbability: Math.round(45 * variation(35)),
+          rain: parseFloat((1.2 * variation(25)).toFixed(1)),
+          rainProbability: Math.round(0 * variation(35)),
           humidity: Math.round(68 * variation(45)),
-          rain24h: parseFloat((8.7 * variation(55)).toFixed(1)),
+          rain24h: parseFloat((4.7 * variation(55)).toFixed(1)),
           dataSource: 'simulated'
         });
         return;
       }
 
-      // Extraer el appid de la URL definida arriba
-      const key = this.openWeatherKey.split('appid=')[1];
-      if (!key) throw new Error('No se pudo extraer la clave de OpenWeather');
-      
-      const url = `/weather-api/data/2.5/weather?q=Valencia,ES&units=metric&appid=${key}&lang=es`;
-      
-      const json: any = await this.http.get(url).toPromise();
+      // Intentar obtener datos de AEMET (Horaria para el día de hoy)
+      const hourlyData = await this.fetchAemetData(`prediccion/especifica/municipio/horaria/${this.valenciaId}`);
+      if (hourlyData && hourlyData[0]?.prediccion?.dia) {
+        const todayForecast = hourlyData[0].prediccion.dia[0];
+        const currentHour = new Date().getHours();
+        const currentHourStr = currentHour.toString().padStart(2, '0');
 
-      const rain1h = json?.rain?.['1h'] ?? 0;
-      const pop = json?.clouds?.all ?? 0;
+        const getValueForHour = (arr: any[], hour: string) => {
+          const item = arr.find(i => i.periodo === hour);
+          return item ? parseFloat(item.value) : 0;
+        };
 
-      this.weatherSignal.set({
-        temperature: json?.main?.temp ?? 0,
-        rain: rain1h,
-        rainProbability: pop,
-        humidity: json?.main?.humidity ?? 0,
-        rain24h: json?.rain?.['3h'] ? json.rain['3h'] * 8 : 0,
-        dataSource: 'real'
-      });
+        const temperature = getValueForHour(todayForecast.temperatura, currentHourStr);
+        const rain = getValueForHour(todayForecast.precipitacion, currentHourStr);
+        const humidity = getValueForHour(todayForecast.humedadRelativa, currentHourStr);
+        
+        // Calcular acumulado 24h (suma de todas las horas de hoy hasta ahora)
+        const rain24h = todayForecast.precipitacion
+          .filter((p: any) => parseInt(p.periodo) <= currentHour)
+          .reduce((acc: number, p: any) => acc + (parseFloat(p.value) || 0), 0);
+
+        // Probabilidad de lluvia (AEMET da rangos 08-14, 14-20, etc.)
+        const probRainArr = todayForecast.probPrecipitacion || [];
+        const currentRange = probRainArr.find((p: any) => {
+          const start = parseInt(p.periodo.substring(0, 2));
+          const end = parseInt(p.periodo.substring(2, 4));
+          return currentHour >= start && currentHour < end;
+        });
+        const rainProbability = currentRange ? parseInt(currentRange.value) : 0;
+
+        this.weatherSignal.set({
+          temperature,
+          rain,
+          rainProbability,
+          humidity,
+          rain24h,
+          dataSource: 'real'
+        });
+        return;
+      }
+
+      throw new Error('AEMET data structure invalid');
+
     } catch (e) {
-      console.error('[ApiService] Error loading weather data', e);
-      this.weatherSignal.set({
-        temperature: 20,
-        rain: 0,
-        rainProbability: 10,
-        humidity: 60,
-        rain24h: 0,
-        dataSource: 'simulated'
-      });
+      console.error('[ApiService] Error loading weather data from AEMET, trying OpenWeather fallback', e);
+      try {
+        const key = this.openWeatherKey.split('appid=')[1];
+        const url = `/weather-api/data/2.5/weather?q=Valencia,ES&units=metric&appid=${key}&lang=es`;
+        const json: any = await this.http.get(url).toPromise();
+        
+        this.weatherSignal.set({
+          temperature: json?.main?.temp ?? 20,
+          rain: json?.rain?.['1h'] ?? 0,
+          rainProbability: 0,
+          humidity: json?.main?.humidity ?? 60,
+          rain24h: json?.rain?.['3h'] ? json.rain['3h'] * 8 : 0,
+          dataSource: 'real'
+        });
+      } catch (fallbackError) {
+        console.error('[ApiService] Fallback weather also failed', fallbackError);
+        this.weatherSignal.set({
+          temperature: 20,
+          rain: 0,
+          rainProbability: 10,
+          humidity: 60,
+          rain24h: 0,
+          dataSource: 'simulated'
+        });
+      }
     }
   }
 
@@ -561,24 +634,24 @@ private interpolatePoints(mainPoints: PollutionHeatmapPoint[]): PollutionHeatmap
 
   private getFallbackData(date?: string): Promise<PollutionHeatmapPoint[]> {
     const valenciaStations = [
-      { lat: 39.4699, lng: -0.3763, name: 'Ciutat Vella', baseValue: 1.0 },
-      { lat: 39.4800, lng: -0.3600, name: 'Burjassot (Universitat)', baseValue: 0.85 },
-      { lat: 39.4600, lng: -0.3900, name: 'L\'Olivereta', baseValue: 0.9 },
-      { lat: 39.4750, lng: -0.3700, name: 'Poblats Marítims', baseValue: 1.15 },
-      { lat: 39.4650, lng: -0.3800, name: 'Eixample', baseValue: 1.1 },
-      { lat: 39.4720, lng: -0.3750, name: 'Pla del Real', baseValue: 0.95 },
-      { lat: 39.4680, lng: -0.3650, name: 'Extramurs', baseValue: 1.2 },
-      { lat: 39.4780, lng: -0.3850, name: 'Campanar', baseValue: 0.88 },
-      { lat: 39.4620, lng: -0.3750, name: 'Jesús', baseValue: 1.05 },
-      { lat: 39.4700, lng: -0.3500, name: 'Alboraya', baseValue: 0.75 },
-      { lat: 39.4550, lng: -0.3800, name: 'Patraix', baseValue: 0.92 },
-      { lat: 39.4850, lng: -0.3700, name: 'Benimaclet', baseValue: 0.8 },
-      { lat: 39.4750, lng: -0.3900, name: 'Quart de Poblet', baseValue: 0.95 },
-      { lat: 39.4680, lng: -0.3400, name: 'Malva-rosa', baseValue: 0.7 },
-      { lat: 39.4600, lng: -0.3600, name: 'Quatre Carreres', baseValue: 1.0 },
-      { lat: 39.4720, lng: -0.3650, name: 'Russafa', baseValue: 1.15 },
-      { lat: 39.4650, lng: -0.3700, name: 'Algirós', baseValue: 0.9 },
-      { lat: 39.4800, lng: -0.3750, name: 'Rascanya', baseValue: 0.85 }
+      { lat: 39.4699, lng: -0.3763, name: 'Ciutat Vella', baseValue: 0.2 },
+      { lat: 39.4800, lng: -0.3600, name: 'Burjassot (Universitat)', baseValue: 0.18 },
+      { lat: 39.4600, lng: -0.3900, name: 'L\'Olivereta', baseValue:0.2 },
+      { lat: 39.4750, lng: -0.3700, name: 'Poblats Marítims', baseValue: 0.2 },
+      { lat: 39.4650, lng: -0.3800, name: 'Eixample', baseValue: 0.3 },
+      { lat: 39.4720, lng: -0.3750, name: 'Pla del Real', baseValue: 0.13 },
+      { lat: 39.4680, lng: -0.3650, name: 'Extramurs', baseValue: 0.2 },
+      { lat: 39.4780, lng: -0.3850, name: 'Campanar', baseValue: 0.2 },
+      { lat: 39.4620, lng: -0.3750, name: 'Jesús', baseValue: 0.2 },
+      { lat: 39.4700, lng: -0.3500, name: 'Alboraya', baseValue: 0.15 },
+      { lat: 39.4550, lng: -0.3800, name: 'Patraix', baseValue: 0.25 },
+      { lat: 39.4850, lng: -0.3700, name: 'Benimaclet', baseValue: 0.12 },
+      { lat: 39.4750, lng: -0.3900, name: 'Quart de Poblet', baseValue: 0.13 },
+      { lat: 39.4680, lng: -0.3400, name: 'Malva-rosa', baseValue: 0.1 },
+      { lat: 39.4600, lng: -0.3600, name: 'Quatre Carreres', baseValue:0.18},
+      { lat: 39.4720, lng: -0.3650, name: 'Russafa', baseValue: 0.22 },
+      { lat: 39.4650, lng: -0.3700, name: 'Algirós', baseValue: 0.19 },
+      { lat: 39.4800, lng: -0.3750, name: 'Rascanya', baseValue: 0.17 }
     ];
 
     const airQuality = this.airQualitySignal();
@@ -814,5 +887,195 @@ private createSimulatedPoints(baseValue: number): PollutionHeatmapPoint[] {
 
   private getTimestamp(): string {
     return new Date().toISOString().slice(0, 10);
+  }
+
+  private async fetchForecastValencia(): Promise<void> {
+    try {
+      const dailyData = await this.fetchAemetData(`prediccion/especifica/municipio/diaria/${this.valenciaId}`);
+      
+      if (dailyData && dailyData[0]?.prediccion?.dia) {
+        const days = dailyData[0].prediccion.dia;
+        
+        const forecast: WeatherForecastDay[] = days.map((day: any) => {
+          const date = day.fecha.split('T')[0];
+          
+          // Probabilidad de lluvia: buscar el máximo valor de todos los períodos
+          const rainProbs = day.probPrecipitacion || [];
+          const maxRainProb = rainProbs.length > 0 
+            ? Math.max(...rainProbs.map((p: any) => parseInt(p.value) || 0)) 
+            : 0;
+
+          // Estado del cielo: buscar el periodo 00-24 o el primero disponible
+          const skyStatus = day.estadoCielo.find((s: any) => s.periodo === '00-24') || day.estadoCielo[0];
+          
+          return {
+            date,
+            dayName: this.getDayName(date),
+            tempMin: parseFloat(day.temperatura.minima),
+            tempMax: parseFloat(day.temperatura.maxima),
+            rainProbability: maxRainProb,
+            icon: this.mapAemetIcon(skyStatus?.value, skyStatus?.descripcion),
+            description: skyStatus?.descripcion || 'Despejado'
+          };
+        });
+
+        this.forecastSignal.set(forecast);
+
+        // Actualizar la probabilidad de lluvia de 'hoy' en el clima actual
+        const todayForecast = forecast.find(f => f.dayName === 'Hoy');
+        if (todayForecast) {
+          const currentWeather = this.weatherSignal();
+          if (currentWeather) {
+            this.weatherSignal.set({
+              ...currentWeather,
+              rainProbability: todayForecast.rainProbability
+            });
+          }
+        }
+        return;
+      }
+      throw new Error('AEMET forecast structure invalid');
+
+    } catch (e) {
+      console.error('[ApiService] Error loading forecast data from AEMET, trying OpenWeather fallback', e);
+      try {
+        const key = this.openWeatherKey.split('appid=')[1];
+        const url = `/weather-api/data/2.5/forecast?q=Valencia,ES&units=metric&appid=${key}&lang=es`;
+        const json: any = await this.http.get(url).toPromise();
+
+        if (json?.list) {
+          const daysMap = new Map<string, any[]>();
+          json.list.forEach((item: any) => {
+            const date = item.dt_txt.split(' ')[0];
+            if (!daysMap.has(date)) daysMap.set(date, []);
+            daysMap.get(date)!.push(item);
+          });
+
+          let forecast: WeatherForecastDay[] = Array.from(daysMap.entries()).slice(0, 5).map(([date, items]) => {
+            const temps = items.map(i => i.main.temp);
+            const rains = items.map(i => i.pop || 0);
+            const icons = items.map(i => i.weather[0].icon);
+            const desc = items[Math.floor(items.length / 2)].weather[0].description;
+            return {
+              date,
+              dayName: this.getDayName(date),
+              tempMin: Math.min(...temps),
+              tempMax: Math.max(...temps),
+              rainProbability: Math.round(Math.max(...rains) * 100),
+              icon: this.mapWeatherIcon(icons[Math.floor(icons.length / 2)]),
+              description: desc.charAt(0).toUpperCase() + desc.slice(1)
+            };
+          });
+          this.forecastSignal.set(forecast);
+        }
+      } catch (fallbackError) {
+        console.error('[ApiService] Fallback forecast also failed', fallbackError);
+        this.generateSimulatedForecast();
+      }
+    }
+  }
+
+  private mapAemetIcon(code: string, description: string = ''): string {
+    const desc = description.toLowerCase();
+    
+    // Mapeo por código numérico de AEMET
+    const codeMap: { [key: string]: string } = {
+      '11': 'fa-sun',
+      '11n': 'fa-moon',
+      '12': 'fa-cloud-sun',
+      '13': 'fa-cloud-sun',
+      '14': 'fa-cloud',
+      '15': 'fa-cloud',
+      '16': 'fa-cloud',
+      '17': 'fa-cloud',
+      '19': 'fa-cloud',
+      '43': 'fa-cloud-showers-heavy',
+      '44': 'fa-cloud-showers-heavy',
+      '45': 'fa-cloud-showers-heavy',
+      '46': 'fa-cloud-showers-heavy',
+      '51': 'fa-bolt-lightning',
+      '52': 'fa-bolt-lightning',
+      '53': 'fa-bolt-lightning',
+      '54': 'fa-bolt-lightning',
+      '71': 'fa-snowflake',
+      '72': 'fa-snowflake',
+      '73': 'fa-snowflake',
+      '74': 'fa-snowflake',
+    };
+
+    if (codeMap[code]) return codeMap[code];
+
+    // Mapeo por palabras clave si el código no coincide
+    if (desc.includes('despejado')) return 'fa-sun';
+    if (desc.includes('poco nuboso')) return 'fa-cloud-sun';
+    if (desc.includes('nuboso')) return 'fa-cloud';
+    if (desc.includes('lluvia') || desc.includes('chubascos')) return 'fa-cloud-showers-heavy';
+    if (desc.includes('tormenta')) return 'fa-bolt-lightning';
+    if (desc.includes('nieve')) return 'fa-snowflake';
+    if (desc.includes('niebla') || desc.includes('bruma')) return 'fa-smog';
+
+    return 'fa-cloud';
+  }
+
+  private getDayName(dateStr: string): string {
+    const date = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    date.setHours(0, 0, 0, 0);
+    
+    if (date.getTime() === today.getTime()) return 'Hoy';
+    
+    const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    return days[date.getDay()];
+  }
+
+  private mapWeatherIcon(owIcon: string): string {
+    const map: { [key: string]: string } = {
+      '01d': 'fa-sun',
+      '01n': 'fa-moon',
+      '02d': 'fa-cloud-sun',
+      '02n': 'fa-cloud-moon',
+      '03d': 'fa-cloud',
+      '03n': 'fa-cloud',
+      '04d': 'fa-cloud',
+      '04n': 'fa-cloud',
+      '09d': 'fa-cloud-showers-heavy',
+      '09n': 'fa-cloud-showers-heavy',
+      '10d': 'fa-cloud-sun-rain',
+      '10n': 'fa-cloud-moon-rain',
+      '11d': 'fa-bolt',
+      '11n': 'fa-bolt',
+      '13d': 'fa-snowflake',
+      '13n': 'fa-snowflake',
+      '50d': 'fa-smog',
+      '50n': 'fa-smog',
+    };
+    return map[owIcon] || 'fa-cloud';
+  }
+
+  private generateSimulatedForecast(): void {
+    const forecast: WeatherForecastDay[] = [];
+    const today = new Date();
+    const baseTempMax = 18;
+    const baseTempMin = 12;
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+      
+      const rainProb = i % 4 === 0 ? Math.round(Math.random() * 20) : Math.round(Math.random() * 80);
+      
+      forecast.push({
+        date: dateStr,
+        dayName: i === 0 ? 'Hoy' : this.getDayName(dateStr),
+        tempMin: baseTempMin + Math.round(Math.random() * 4 - 2),
+        tempMax: baseTempMax + Math.round(Math.random() * 6 - 3),
+        rainProbability: rainProb,
+        icon: rainProb < 20 ? 'fa-sun' : (rainProb < 50 ? 'fa-cloud-sun' : 'fa-cloud-showers-heavy'),
+        description: rainProb < 20 ? 'Despejado' : (rainProb < 50 ? 'Parcialmente nublado' : 'Lluvia probable')
+      });
+    }
+    this.forecastSignal.set(forecast);
   }
 }
