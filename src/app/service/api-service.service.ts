@@ -94,7 +94,7 @@ export class ApiService {
   }
 
   private async fetchAemetData(endpoint: string): Promise<any> {
-    const url = `https://opendata.aemet.es/opendata/api/${endpoint}`;
+    const url = `/aemet-api/opendata/api/${endpoint}`;
     try {
       const response: any = await this.http.get(url, {
         headers: { 'api_key': this.aemetKey }
@@ -102,7 +102,11 @@ export class ApiService {
 
       if (response?.estado === 200 && response.datos) {
         // AEMET devuelve una URL temporal con los datos reales
-        return await this.http.get(response.datos).toPromise();
+        let dataUrl = response.datos;
+        if (dataUrl.startsWith('https://opendata.aemet.es')) {
+          dataUrl = dataUrl.replace('https://opendata.aemet.es', '/aemet-api');
+        }
+        return await this.http.get(dataUrl).toPromise();
       }
       throw new Error(`AEMET Error: ${response?.descripcion || 'Unknown error'}`);
     } catch (error) {
@@ -713,7 +717,7 @@ private interpolatePoints(mainPoints: PollutionHeatmapPoint[]): PollutionHeatmap
   private async fetchFromAEMET(): Promise<PollutionHeatmapPoint[]> {
     try {
       const AEMET_API_KEY = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJtYXJjb3N2YWxsZWNpbGxvc3VAZ21haWwuY29tIiwianRpIjoiMTkyMWZkNjAtODc3YS00ZjNiLTljOTItN2NlMTcwOWM2MGY0IiwiaXNzIjoiQUVNRVQiLCJpYXQiOjE3NzU2NTk3MjksInVzZXJJZCI6IjE5MjFmZDYwLTg3N2EtNGYzYi05YzkyLTdjZTE3MDljNjBmNCIsInJvbGUiOiIifQ.-nphLp1jLYV1wX352-Ts2BLWZNAdkoB5x69zFZDCxv8';
-      const url = 'https://opendata.aemet.es/opendata/api/red/especial/contaminacionfondo/estacion/8414A';
+      const url = '/aemet-api/opendata/api/red/especial/contaminacionfondo/estacion/8414A';
       
       const json: any = await this.http.get(url, {
         headers: { 'api_key': AEMET_API_KEY }
@@ -722,7 +726,11 @@ private interpolatePoints(mainPoints: PollutionHeatmapPoint[]): PollutionHeatmap
       console.log("[AEMET] Response:", json);
       
       if (json?.estado === 200 && json.datos) {
-        const measurements: any = await this.http.get(json.datos).toPromise();
+        let dataUrl = json.datos;
+        if (dataUrl.startsWith('https://opendata.aemet.es')) {
+          dataUrl = dataUrl.replace('https://opendata.aemet.es', '/aemet-api');
+        }
+        const measurements: any = await this.http.get(dataUrl).toPromise();
         
         const points: PollutionHeatmapPoint[] = measurements.map((m: any) => ({
           lat: parseFloat(m.lat) || 39.4699,

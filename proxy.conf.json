@@ -26,5 +26,13 @@
     "pathRewrite": {
       "^/waqi-api": ""
     }
+  },
+  "/aemet-api": {
+    "target": "https://opendata.aemet.es",
+    "secure": true,
+    "changeOrigin": true,
+    "pathRewrite": {
+      "^/aemet-api": ""
+    }
   }
 }
