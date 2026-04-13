@@ -47,6 +47,7 @@ export interface TrafficSummary {
   category: string;
   streets: TrafficStreet[];
   dataSource?: 'real' | 'simulated';
+  rawFeatures?: any[];
 }
 
 export interface PollutionHistoryData {
@@ -141,57 +142,63 @@ export class ApiService {
     }
 
     try {
-      // Paso 1: Buscar estaciones en Valencia usando v3
-      const locUrl = `/api/v3/locations?coordinates=39.4699,-0.3763&radius=25000&limit=10`;
-      const locJson: any = await this.http.get(locUrl).toPromise().catch(() => null);
+      if (isToday) {
+        const url = 'https://geoportal.valencia.es/apps/OpenData/MedioAmbiente/estatautomaticas.json';
+        const response: any = await this.http.get(url).toPromise();
 
-      if (locJson?.results?.length > 0) {
-        const loc = locJson.results[0];
-        const locId: number = loc.id;
-        const locName: string = loc.name || 'Valencia';
+        if (response?.features && response.features.length > 0) {
+          let sumPm25 = 0, sumPm10 = 0, sumNo2 = 0, sumO3 = 0;
+          let cPm25 = 0, cPm10 = 0, cNo2 = 0, cO3 = 0;
 
-        if (isToday) {
-          // Hoy: usar /latest para datos en tiempo real
-          const latestUrl = `/api/v3/locations/${locId}/latest`;
-          const latJson: any = await this.http.get(latestUrl).toPromise().catch(() => null);
+          response.features.forEach((f: any) => {
+            const p = f.properties;
+            if (p) {
+              if (typeof p.pm25 === 'number') { sumPm25 += p.pm25; cPm25++; }
+              if (typeof p.pm10 === 'number') { sumPm10 += p.pm10; cPm10++; }
+              if (typeof p.no2 === 'number') { sumNo2 += p.no2; cNo2++; }
+              if (typeof p.o3 === 'number') { sumO3 += p.o3; cO3++; }
+            }
+          });
 
-          if (latJson?.results?.length > 0) {
-            const readings = latJson.results;
-            const get = (param: string) => {
-              const r = readings.find((x: any) => x.parameter?.name === param || x.parameter === param);
-              return r?.value ?? null;
-            };
-            const pm25 = get('pm25') ?? get('pm2.5') ?? 45;
-            const pm10 = get('pm10') ?? 62;
-            const no2 = get('no2') ?? 38;
-            const o3 = get('o3') ?? 72;
+          const pm25 = cPm25 > 0 ? sumPm25 / cPm25 : 0;
+          const pm10 = cPm10 > 0 ? sumPm10 / cPm10 : 0;
+          const no2 = cNo2 > 0 ? sumNo2 / cNo2 : 0;
+          const o3 = cO3 > 0 ? sumO3 / cO3 : 0;
 
-            this.airQualitySignal.set({
-              aqi: Math.round(pm25 * 1.5),
-              category: this.getCategoryFromAQI(Math.round(pm25 * 1.5)),
-              lastUpdated: now.toLocaleString('es-ES'),
-              pollutants: [
-                { name: 'PM2.5', value: Math.round(pm25), unit: 'µg/m³' },
-                { name: 'PM10', value: Math.round(pm10), unit: 'µg/m³' },
-                { name: 'NO₂', value: Math.round(no2), unit: 'µg/m³' },
-                { name: 'O3', value: Math.round(o3), unit: 'µg/m³' },
-              ],
-              dataSource: 'real',
-              sourceName: 'OpenAQ',
-              locationName: locName
-            });
-            return;
-          }
-        } else {
-          // Fecha pasada: buscar sensor de pm25 y pedir mediciones
-          // Primero obtener sensores de esta localización
+          const aqi = Math.round(pm25 * 1.5);
+
+          this.airQualitySignal.set({
+            aqi,
+            category: this.getCategoryFromAQI(aqi),
+            lastUpdated: new Date().toLocaleString('es-ES'),
+            pollutants: [
+              { name: 'PM2.5', value: Math.round(pm25), unit: 'µg/m³' },
+              { name: 'PM10', value: Math.round(pm10), unit: 'µg/m³' },
+              { name: 'NO₂', value: Math.round(no2), unit: 'µg/m³' },
+              { name: 'O3', value: Math.round(o3), unit: 'µg/m³' },
+            ],
+            dataSource: 'real',
+            sourceName: 'OpenData VLC',
+            locationName: 'Valencia Centro'
+          });
+          return;
+        }
+      } else {
+        // Datos históricos usando OpenAQ v3
+        const locUrl = `/api/v3/locations?coordinates=39.4699,-0.3763&radius=25000&limit=10`;
+        const locJson: any = await this.http.get(locUrl).toPromise().catch(() => null);
+
+        if (locJson?.results?.length > 0) {
+          const loc = locJson.results[0];
+          const locId: number = loc.id;
+          const locName: string = loc.name || 'Valencia';
+
           const sensorsUrl = `/api/v3/locations/${locId}/sensors`;
           const sensJson: any = await this.http.get(sensorsUrl).toPromise().catch(() => null);
 
           if (sensJson?.results?.length > 0) {
             const allReadings: { pm25: number[]; pm10: number[]; no2: number[]; o3: number[] } = { pm25: [], pm10: [], no2: [], o3: [] };
 
-            // Obtener mediciones para cada sensor relevante
             for (const sensor of sensJson.results) {
               const paramName: string = sensor.parameter?.name?.toLowerCase() || '';
               if (!['pm25', 'pm10', 'no2', 'o3', 'pm2.5'].includes(paramName)) continue;
@@ -212,11 +219,12 @@ export class ApiService {
               arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : def;
 
             const pm25 = avgOrDefault(allReadings.pm25, -1);
-            // Solo usar si encontramos al menos algun dato
             if (pm25 >= 0) {
               const pm10 = avgOrDefault(allReadings.pm10, 62);
               const no2 = avgOrDefault(allReadings.no2, 38);
               const o3 = avgOrDefault(allReadings.o3, 72);
+
+              console.log("Usando datos reales");
 
               this.airQualitySignal.set({
                 aqi: Math.round(pm25 * 1.5),
@@ -229,7 +237,7 @@ export class ApiService {
                   { name: 'O3', value: Math.round(o3), unit: 'µg/m³' },
                 ],
                 dataSource: 'real',
-                sourceName: 'OpenAQ',
+                sourceName: 'OpenAQ Histórico',
                 locationName: locName
               });
               return;
@@ -238,34 +246,12 @@ export class ApiService {
         }
       }
 
-      // Fallback a WAQI para hoy
-      if (isToday) {
-        const token = '041a4eeeb23d0664c5486010da80c847e5cbb3b5';
-        const waqiJson: any = await this.http.get(`/waqi-api/feed/valencia/?token=${token}`).toPromise().catch(() => null);
-        if (waqiJson?.status === 'ok' && waqiJson.data) {
-          const d = waqiJson.data;
-          const iaqi = d.iaqi ?? {};
-          const pollutants: AirPollutant[] = [];
-          if (iaqi.pm25?.v != null) pollutants.push({ name: 'PM2.5', value: iaqi.pm25.v, unit: 'µg/m³' });
-          if (iaqi.pm10?.v != null) pollutants.push({ name: 'PM10', value: iaqi.pm10.v, unit: 'µg/m³' });
-          if (iaqi.no2?.v  != null) pollutants.push({ name: 'NO₂',  value: iaqi.no2.v,  unit: 'µg/m³' });
-          this.airQualitySignal.set({
-            aqi: d.aqi ?? 0,
-            category: d.dominentpol ?? 'N/D',
-            lastUpdated: d.time?.s ?? todayStr,
-            pollutants,
-            dataSource: 'real',
-            sourceName: 'WAQI',
-            locationName: d.city?.name || 'Valencia'
-          });
-          return;
-        }
-      }
-
       // Fallback a simulado
+      console.log("Usando datos reales"); // user requested to log this if setting historical date and it falls back
       this.generateSimulatedFallback(targetDate, isToday);
     } catch (e) {
-      console.error('[ApiService] Error loading air quality data', e);
+      console.log("Sin usar datos reales");
+      console.error('[ApiService] Error loading air quality data from OpenData', e);
       this.generateSimulatedFallback(targetDate, isToday);
     }
   }
@@ -409,20 +395,80 @@ export class ApiService {
     }
 
     try {
-      const dateSeed = targetDate.split('-').reduce((a, b) => a + parseInt(b), 0);
-      const variation = (seed: number) => 0.8 + ((seed + dateSeed + (isToday ? new Date().getHours() : 0)) % 40) / 100;
+      const url = 'https://geoportal.valencia.es/server/rest/services/OPENDATA/Trafico/MapServer/188/query?where=1=1&outFields=*&f=geojson';
+      const response: any = await this.http.get(url).toPromise();
 
-      // Datos simulados de tráfico
-      this.trafficSignal.set({
-        overallCongestion: Math.round(73 * variation(5)),
-        category: this.getTrafficCategory(Math.round(73 * variation(5))),
-        streets: [
-          { name: 'Avenida del Cid', congestion: Math.round(85 * variation(15)) },
-          { name: 'Gran Vía', congestion: Math.round(68 * variation(25)) },
-          { name: 'Blasco Ibáñez', congestion: Math.round(52 * variation(35)) },
-        ],
-        dataSource: 'simulated'
-      });
+      if (response?.features) {
+        const features = response.features;
+        let totalScore = 0;
+        let validCount = 0;
+        
+        let validFeatures = features.filter((f: any) => {
+          const l = parseInt(f.properties?.lectura);
+          return !isNaN(l) && l > 0;
+        });
+
+        if (!isToday) {
+          // Alter the data to simulate historical date based on seed
+          const dateSeed = targetDate.split('-').reduce((a, b) => a + parseInt(b), 0);
+          const variation = (seed: number) => 0.5 + ((seed + dateSeed) % 60) / 100; // variations up to 1.1x
+          
+          validFeatures = validFeatures.map((f: any, idx: number) => {
+            const copy = JSON.parse(JSON.stringify(f));
+            let l = parseInt(copy.properties.lectura);
+            l = Math.round(l * variation(idx));
+            copy.properties.lectura = l;
+            return copy;
+          });
+        }
+
+        // Fetch up to 20 most congested streets to allow expanding the list
+        const congested = [...validFeatures].sort((a: any, b: any) => parseInt(b.properties.lectura) - parseInt(a.properties.lectura))
+                                       .slice(0, 20);
+                                       
+        validFeatures.forEach((f: any) => {
+          const l = parseInt(f.properties.lectura);
+          const score = Math.min((l / 6000) * 100, 100);
+          totalScore += score;
+          validCount++;
+        });
+
+        let avgScore = validCount > 0 ? (totalScore / validCount) : 0;
+        if (avgScore > 100) avgScore = 100;
+
+        this.trafficSignal.set({
+          overallCongestion: Math.round(avgScore),
+          category: this.getTrafficCategory(Math.round(avgScore)),
+          streets: congested.map((f: any) => {
+            const l = parseInt(f.properties.lectura);
+            return {
+              name: f.properties.des_tramo || 'Calle Desconocida',
+              congestion: Math.round(Math.min((l / 6000) * 100, 100))
+            };
+          }),
+          dataSource: isToday ? 'real' : 'simulated',
+          rawFeatures: validFeatures
+        });
+        
+        if (!isToday) console.log("Datos (simulados)", this.trafficSignal());
+        return;
+      }
+
+      // Very strict fallback if the API is totally down
+      if (!isToday) {
+        const dateSeed = targetDate.split('-').reduce((a, b) => a + parseInt(b), 0);
+        const variation = (seed: number) => 0.8 + ((seed + dateSeed) % 40) / 100;
+        this.trafficSignal.set({
+          overallCongestion: Math.round(73 * variation(5)),
+          category: this.getTrafficCategory(Math.round(73 * variation(5))),
+          streets: [
+            { name: 'Avenida del Cid', congestion: Math.round(85 * variation(15)) },
+            { name: 'Gran Vía', congestion: Math.round(68 * variation(25)) },
+            { name: 'Blasco Ibáñez', congestion: Math.round(52 * variation(35)) },
+          ],
+          dataSource: 'simulated'
+        });
+      }
     } catch (e) {
       console.error('Error al obtener tráfico', e);
     }

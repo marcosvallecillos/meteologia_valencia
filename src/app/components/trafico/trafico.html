@@ -4,9 +4,9 @@
     <span class="traffic-category">{{ traffic()?.category ?? '--' }}</span>
   </div>
   
-  @if (traffic()?.streets?.length) {
+  @if (visibleStreets().length > 0) {
     <ul class="traffic-streets">
-      @for (street of traffic()?.streets ?? []; track street.name) {
+      @for (street of visibleStreets(); track street.name) {
         <li>
           <span class="street-name">{{ street.name }}</span>
           <div class="progress-bar-container">
@@ -16,7 +16,52 @@
         </li>
       }
     </ul>
+
+    @if (hasMoreStreets()) {
+      <button class="btn-show-more" (click)="toggleMap()">
+        {{ isMapVisible() ? 'Ocultar mapa' : 'Ver mapa de tráfico (' + extraStreets().length + ' calles más)' }}
+        <i class="fa-solid" [class.fa-map]="!isMapVisible()" [class.fa-chevron-up]="isMapVisible()"></i>
+      </button>
+
+      @if (isMapVisible()) {
+        <div class="traffic-map-container" style="margin-top: 1rem; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; position: relative; z-index: 10;">
+          <div id="trafficMap" style="height: 300px; width: 100%;"></div>
+        </div>
+      }
+    }
   }
 } @else {
   <p>No hay datos de tráfico disponibles.</p>
+}
+
+@if (selectedStreetData()) {
+  <div class="street-modal-overlay" (click)="closeModal()">
+    <div class="street-modal-content" (click)="$event.stopPropagation()">
+      <button class="modal-close-btn" (click)="closeModal()"><i class="fa-solid fa-xmark"></i></button>
+      
+      <div class="modal-header">
+        <h3>{{ selectedStreetData().name }}</h3>
+      </div>
+      
+      <div class="modal-body">
+        <div class="modal-info-row">
+          <span class="modal-label">ID Tramo:</span>
+          <span class="modal-value">{{ selectedStreetData().idtramo }}</span>
+        </div>
+        <div class="modal-info-row">
+          <span class="modal-label">Intensidad actual:</span>
+          <span class="modal-value">{{ selectedStreetData().lectura }} veh.</span>
+        </div>
+        <div class="modal-info-row">
+          <span class="modal-label">Intensidad Media (IMV):</span>
+          <span class="modal-value">{{ selectedStreetData().imv }}</span>
+        </div>
+      </div>
+      
+      <div class="modal-footer" [style.background-color]="selectedStreetData().color + '1a'" [style.color]="selectedStreetData().color">
+        <div class="modal-congestion-label">Congestión en este tramo:</div>
+        <div class="modal-congestion-value">{{ selectedStreetData().congestion }}%</div>
+      </div>
+    </div>
+  </div>
 }
