@@ -104,6 +104,10 @@ export class Trafico {
           }).addTo(this.map!);
        });
     }
+    
+    // Ensure map renders correctly in modal
+    setTimeout(() => {
+      this.map?.invalidateSize();
+    }, 250);
   }
 }
-

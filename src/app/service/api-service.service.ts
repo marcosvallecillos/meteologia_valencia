@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+﻿import { Injectable, computed, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 
 export interface AirPollutant {
@@ -89,6 +89,26 @@ export class ApiService {
   readonly pollutionHistory = computed(() => this.pollutionHistorySignal());
   readonly forecast = computed(() => this.forecastSignal());
   readonly selectedDate = computed(() => this.selectedDateSignal());
+
+  private openAqRateLimited = false;
+
+  private async safeOpenAQGet(url: string): Promise<any> {
+    if (this.openAqRateLimited) {
+      throw new Error('Rate limit previously exceeded');
+    }
+    try {
+      // Evitar que el navegador cargue el error 429 de la caché añadiendo un _=timestamp
+      const separator = url.includes('?') ? '&' : '?';
+      const noCacheUrl = `${url}${separator}_=${Date.now()}`;
+      return await this.http.get(noCacheUrl).toPromise();
+    } catch (err: any) {
+      if (err.status === 429) {
+        this.openAqRateLimited = true;
+        console.warn('[ApiService] API OpenAQ límite excedido (429). Activando simulaciones para evitar errores...');
+      }
+      throw err;
+    }
+  }
 
   setSelectedDate(date: string): void {
     this.selectedDateSignal.set(date);
@@ -185,8 +205,8 @@ export class ApiService {
         }
       } else {
         // Datos históricos usando OpenAQ v3
-        const locUrl = `/api/v3/locations?coordinates=39.4699,-0.3763&radius=25000&limit=10`;
-        const locJson: any = await this.http.get(locUrl).toPromise().catch(() => null);
+        const locUrl = `/api/v3/locations?coordinates=39.4699,-0.3763&radius=25000&limit=1`;
+        const locJson: any = await this.safeOpenAQGet(locUrl).catch(() => null);
 
         if (locJson?.results?.length > 0) {
           const loc = locJson.results[0];
@@ -194,17 +214,19 @@ export class ApiService {
           const locName: string = loc.name || 'Valencia';
 
           const sensorsUrl = `/api/v3/locations/${locId}/sensors`;
-          const sensJson: any = await this.http.get(sensorsUrl).toPromise().catch(() => null);
+          const sensJson: any = await this.safeOpenAQGet(sensorsUrl).catch(() => null);
 
           if (sensJson?.results?.length > 0) {
             const allReadings: { pm25: number[]; pm10: number[]; no2: number[]; o3: number[] } = { pm25: [], pm10: [], no2: [], o3: [] };
 
-            for (const sensor of sensJson.results) {
+            const validSensors = sensJson.results.filter((s:any) => ['pm25', 'pm10', 'no2', 'o3', 'pm2.5'].includes(s.parameter?.name?.toLowerCase() || '')).slice(0, 3);
+
+            for (const sensor of validSensors) {
               const paramName: string = sensor.parameter?.name?.toLowerCase() || '';
-              if (!['pm25', 'pm10', 'no2', 'o3', 'pm2.5'].includes(paramName)) continue;
 
               const measUrl = `/api/v3/sensors/${sensor.id}/measurements?datetime_from=${targetDate}T00:00:00Z&datetime_to=${targetDate}T23:59:59Z&limit=24`;
-              const measJson: any = await this.http.get(measUrl).toPromise().catch(() => null);
+              await new Promise(r => setTimeout(r, 250));
+              const measJson: any = await this.safeOpenAQGet(measUrl).catch(() => null);
               const vals = measJson?.results?.map((r: any) => r.value).filter((v: any) => v != null) ?? [];
               const avg = vals.length > 0 ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : null;
 
@@ -498,28 +520,29 @@ export class ApiService {
       console.log(`[ApiService] Buscando historia real desde ${startDate.toISOString()} hasta ${endDate.toISOString()}`);
 
       // Paso 1: Buscar varias ubicaciones cercanas para tener más sensores
-      const locUrl = `/api/v3/locations?coordinates=39.4699,-0.3763&radius=25000&limit=8`;
-      const locJson: any = await this.http.get(locUrl).toPromise().catch(() => null);
+      const locUrl = `/api/v3/locations?coordinates=39.4699,-0.3763&radius=25000&limit=3`;
+      const locJson: any = await this.safeOpenAQGet(locUrl).catch(() => null);
 
       if (locJson?.results?.length > 0) {
         const dataByDate = new Map<string, { pm25: number[]; pm10: number[]; no2: number[]; o3: number[] }>();
         
-        // Procesar hasta 5 localizaciones para asegurar diversidad de datos
-        const locations = locJson.results.slice(0, 5);
+        // Procesar hasta 1 localización para asegurar diversidad de datos y evitar el limite
+        const locations = locJson.results.slice(0, 1);
         
         for (const loc of locations) {
           // Paso 2: Obtener sensores de esta localización
           const sensUrl = `/api/v3/locations/${loc.id}/sensors`;
-          const sensJson: any = await this.http.get(sensUrl).toPromise().catch(() => null);
+          const sensJson: any = await this.safeOpenAQGet(sensUrl).catch(() => null);
 
           if (sensJson?.results?.length > 0) {
-            for (const sensor of sensJson.results) {
+            const validSensors = sensJson.results.filter((s:any) => ['pm25', 'pm2.5', 'pm10', 'no2', 'o3'].includes(s.parameter?.name?.toLowerCase() || '')).slice(0, 3);
+            for (const sensor of validSensors) {
               const paramName = sensor.parameter?.name?.toLowerCase() || '';
-              if (!['pm25', 'pm2.5', 'pm10', 'no2', 'o3'].includes(paramName)) continue;
 
               // Paso 3: Pedir mediciones históricas
               const measUrl = `/api/v3/sensors/${sensor.id}/measurements?datetime_from=${startDate.toISOString()}&datetime_to=${endDate.toISOString()}&limit=500`;
-              const measJson: any = await this.http.get(measUrl).toPromise().catch(() => null);
+              await new Promise(r => setTimeout(r, 250));
+              const measJson: any = await this.safeOpenAQGet(measUrl).catch(() => null);
 
               measJson?.results?.forEach((r: any) => {
                 const dateStr = new Date(r.period?.datetimeTo?.utc || r.date?.utc || '').toISOString().split('T')[0];
@@ -608,20 +631,21 @@ export class ApiService {
 
     try {
       // OpenAQ v3: buscar todas las ubicaciones en el área de Valencia
-      const locUrl = `/api/v3/locations?coordinates=39.4699,-0.3763&radius=25000&limit=25`;
-      const locJson: any = await this.http.get(locUrl).toPromise().catch(() => null);
+      const locUrl = `/api/v3/locations?coordinates=39.4699,-0.3763&radius=25000&limit=5`;
+      const locJson: any = await this.safeOpenAQGet(locUrl).catch(() => null);
 
       if (locJson?.results?.length > 0) {
         const points: PollutionHeatmapPoint[] = [];
-        const limitedResults = locJson.results.slice(0, 20);
+        const limitedResults = locJson.results.slice(0, 4);
 
-        const latestPromises = limitedResults.map((loc: any) => {
+        const latestPromises = limitedResults.map(async (loc: any, idx: number) => {
           const lat = loc.coordinates?.latitude;
           const lng = loc.coordinates?.longitude;
           if (!lat || !lng) return Promise.resolve(null);
 
           const latestUrl = `/api/v3/locations/${loc.id}/latest`;
-          return this.http.get(latestUrl).toPromise()
+          await new Promise(r => setTimeout(r, 200 * idx));
+          return this.safeOpenAQGet(latestUrl)
             .then((latJson: any) => {
               const pm25 = latJson?.results?.find((r: any) =>
                 r.parameter?.name?.toLowerCase() === 'pm25' || r.parameter?.name?.toLowerCase() === 'pm2.5'
@@ -864,19 +888,57 @@ private createSimulatedPoints(baseValue: number): PollutionHeatmapPoint[] {
  */
 
   public exportPollutionToCSV(data: PollutionHeatmapPoint[], filename: string = 'contaminacion_valencia'): void {
-    if (!data || data.length === 0) {
-      console.warn('[ApiService] No data available for CSV export');
-      return;
+    const rows: string[] = [];
+    rows.push('INFORME AMBIENTAL - VALENCIA');
+    rows.push(`Fecha seleccionada,${this.selectedDateSignal()}`);
+    rows.push(`Generado,${new Date().toLocaleString('es-ES')}`);
+    rows.push('');
+
+    const aq = this.airQualitySignal();
+    rows.push('=== CALIDAD DEL AIRE ===');
+    rows.push(`AQI,${aq?.aqi ?? '-'}`);
+    rows.push(`Categoria,${aq?.category ?? '-'}`);
+    rows.push(`Fuente,${aq?.sourceName ?? '-'}`);
+    if (aq?.pollutants?.length) {
+      rows.push('Contaminante,Valor,Unidad');
+      aq.pollutants.forEach(p => rows.push(`${p.name},${p.value},${p.unit}`));
+    }
+    rows.push('');
+
+    const w = this.weatherSignal();
+    rows.push('=== METEOROLOGIA ===');
+    rows.push(`Temperatura (C),${w?.temperature ?? '-'}`);
+    rows.push(`Lluvia (mm/h),${w?.rain ?? '-'}`);
+    rows.push(`Prob. Lluvia (%),${w?.rainProbability ?? '-'}`);
+    rows.push(`Humedad (%),${w?.humidity ?? '-'}`);
+    rows.push(`Acumulado 24h (mm),${w?.rain24h ?? '-'}`);
+    rows.push('');
+
+    const tr = this.trafficSignal();
+    rows.push('=== TRAFICO ===');
+    rows.push(`Congestion general (%),${tr?.overallCongestion ?? '-'}`);
+    rows.push(`Categoria,${tr?.category ?? '-'}`);
+    if (tr?.streets?.length) {
+      rows.push('Calle,Congestion (%)');
+      tr.streets.forEach(s => rows.push(`"${s.name}",${s.congestion}`));
+    }
+    rows.push('');
+
+    const hist = this.pollutionHistorySignal();
+    if (hist?.length) {
+      rows.push('=== EVOLUCION DE CONTAMINACION ===');
+      rows.push('Fecha,PM2.5 (ug/m3),PM10 (ug/m3),NO2 (ug/m3),O3 (ug/m3)');
+      hist.forEach(h => rows.push(`${h.date},${h.pm25},${h.pm10},${h.no2},${h.o3 ?? '-'}`));
+      rows.push('');
     }
 
-    const headers = ['Latitud', 'Longitud', 'Valor PM2.5'];
-    const csvRows = [
-      headers.join(','),
-      ...data.map(point => [`"${point.lat}"`, `"${point.lng}"`, `"${point.value}"`].join(','))
-    ];
+    if (data?.length) {
+      rows.push('=== MAPA DE CALOR PM2.5 ===');
+      rows.push('Latitud,Longitud,PM2.5 (ug/m3),Ubicacion');
+      data.forEach(p => rows.push(`${p.lat},${p.lng},${p.value},"${p.location ?? ''}"`));
+    }
 
-    const csvContent = csvRows.join('\n');
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\ufeff' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -885,58 +947,232 @@ private createSimulatedPoints(baseValue: number): PollutionHeatmapPoint[] {
     URL.revokeObjectURL(url);
   }
 
-  public async exportPollutionToPDF(data: PollutionHeatmapPoint[], filename: string = 'contaminacion_valencia'): Promise<void> {
-    if (!data || data.length === 0) {
-      console.warn('[ApiService] No data available for PDF export');
-      return;
-    }
-
+  public async exportPollutionToPDF(data: PollutionHeatmapPoint[], filename: string = 'informe_ambiental_valencia'): Promise<void> {
     try {
       const { default: jsPDF } = await import('jspdf');
       const autoTable = await import('jspdf-autotable');
-      const doc = new jsPDF();
-      
+      const { Chart, registerables } = await import('chart.js');
+      Chart.register(...registerables);
+
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageW = doc.internal.pageSize.getWidth();
+      const margin = 14;
+      let curY = 14;
+
+      const addSectionTitle = (title: string) => {
+        doc.setFillColor(30, 64, 175);
+        doc.rect(margin, curY, pageW - margin * 2, 7, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text(title, margin + 2, curY + 5);
+        doc.setTextColor(30, 30, 30);
+        doc.setFont('helvetica', 'normal');
+        curY += 10;
+      };
+
+      const checkPageBreak = (needed: number) => {
+        if (curY + needed > doc.internal.pageSize.getHeight() - 14) {
+          doc.addPage();
+          curY = 14;
+        }
+      };
+
+      // Portada
+      doc.setFillColor(17, 24, 39);
+      doc.rect(0, 0, pageW, 38, 'F');
+      doc.setTextColor(255, 255, 255);
       doc.setFontSize(18);
-      doc.text('Datos de Contaminación - Valencia', 14, 20);
-      doc.setFontSize(10);
-      doc.text(`Generado: ${new Date().toLocaleString('es-ES')}`, 14, 28);
-      
-      const tableData = data.map(point => [
-        point.lat.toFixed(6),
-        point.lng.toFixed(6),
-        point.value.toFixed(2)
-      ]);
-      
-      autoTable.default(doc, {
-        head: [['Latitud', 'Longitud', 'Valor PM2.5 (μg/m³)']],
-        body: tableData,
-        startY: 35,
-        theme: 'grid',
-        headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
-        styles: { fontSize: 9, cellPadding: 3 },
-        columnStyles: { 0: { halign: 'right' }, 1: { halign: 'right' }, 2: { halign: 'center' } }
-      });
-      
-      const finalY = (doc as any).lastAutoTable.finalY + 10;
-      doc.setFontSize(12);
-      doc.text('Resumen Estadístico', 14, finalY);
-      
-      const values = data.map(p => p.value);
-      const avgValue = (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2);
-      const maxValue = Math.max(...values).toFixed(2);
-      const minValue = Math.min(...values).toFixed(2);
-      
-      doc.setFontSize(10);
-      doc.text(`Total de puntos: ${data.length}`, 14, finalY + 8);
-      doc.text(`Valor promedio PM2.5: ${avgValue} μg/m³`, 14, finalY + 14);
-      doc.text(`Valor máximo: ${maxValue} μg/m³`, 14, finalY + 20);
-      doc.text(`Valor mínimo: ${minValue} μg/m³`, 14, finalY + 26);
-      
+      doc.setFont('helvetica', 'bold');
+      doc.text('Informe Ambiental - Valencia', margin, 16);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Fecha: ${this.selectedDateSignal()}   |   Generado: ${new Date().toLocaleString('es-ES')}`, margin, 26);
+      doc.setTextColor(30, 30, 30);
+      curY = 46;
+
+      // Calidad del Aire
+      const aq = this.airQualitySignal();
+      addSectionTitle('CALIDAD DEL AIRE');
+      if (aq) {
+        doc.setFontSize(9);
+        doc.text(`AQI: ${aq.aqi}   Categoria: ${aq.category}   Fuente: ${aq.sourceName ?? '-'}`, margin, curY);
+        curY += 5;
+        if (aq.pollutants?.length) {
+          autoTable.default(doc, {
+            head: [['Contaminante', 'Valor', 'Unidad']],
+            body: aq.pollutants.map(p => [p.name, p.value, p.unit]),
+            startY: curY, margin: { left: margin, right: margin }, theme: 'striped',
+            headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+            styles: { fontSize: 9, cellPadding: 2 },
+          });
+          curY = (doc as any).lastAutoTable.finalY + 6;
+        }
+      }
+
+      // Meteorologia
+      checkPageBreak(40);
+      addSectionTitle('METEOROLOGIA');
+      const w = this.weatherSignal();
+      if (w) {
+        autoTable.default(doc, {
+          head: [['Parametro', 'Valor']],
+          body: [
+            ['Temperatura', `${w.temperature} C`],
+            ['Lluvia', `${w.rain} mm/h`],
+            ['Prob. Lluvia', `${w.rainProbability} %`],
+            ['Humedad', `${w.humidity} %`],
+            ['Acumulado 24h', `${w.rain24h} mm`],
+          ],
+          startY: curY, margin: { left: margin, right: margin }, theme: 'striped',
+          headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+          styles: { fontSize: 9, cellPadding: 2 },
+        });
+        curY = (doc as any).lastAutoTable.finalY + 6;
+      }
+
+      // Trafico
+      checkPageBreak(50);
+      addSectionTitle('TRAFICO');
+      const tr = this.trafficSignal();
+      if (tr) {
+        doc.setFontSize(9);
+        doc.text(`Congestion general: ${tr.overallCongestion}%   Categoria: ${tr.category}`, margin, curY);
+        curY += 5;
+        if (tr.streets?.length) {
+          autoTable.default(doc, {
+            head: [['Calle', 'Congestion (%)']],
+            body: tr.streets.map(s => [s.name, s.congestion]),
+            startY: curY, margin: { left: margin, right: margin }, theme: 'striped',
+            headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+            styles: { fontSize: 9, cellPadding: 2 },
+          });
+          curY = (doc as any).lastAutoTable.finalY + 6;
+        }
+      }
+
+      // Grafico Evolucion Contaminacion
+      const hist = this.pollutionHistorySignal();
+      if (hist?.length) {
+        checkPageBreak(90);
+        addSectionTitle('EVOLUCION DE CONTAMINACION');
+
+        const offscreen = document.createElement('canvas');
+        offscreen.width = 900;
+        offscreen.height = 380;
+        const ctx2d = offscreen.getContext('2d')!;
+
+        const chartInst = new Chart(ctx2d, {
+          type: 'bar',
+          data: {
+            labels: hist.map(h => h.date),
+            datasets: [
+              { label: 'PM2.5', data: hist.map(h => h.pm25), backgroundColor: 'rgba(59,130,246,0.8)', borderColor: '#2563eb', borderWidth: 1 },
+              { label: 'PM10',  data: hist.map(h => h.pm10), backgroundColor: 'rgba(16,185,129,0.8)',  borderColor: '#059669', borderWidth: 1 },
+              { label: 'NO2',   data: hist.map(h => h.no2),  backgroundColor: 'rgba(245,158,11,0.8)', borderColor: '#d97706', borderWidth: 1 },
+            ],
+          },
+          options: {
+            animation: false, responsive: false,
+            plugins: { legend: { display: true, position: 'top', labels: { font: { size: 13 } } } },
+            scales: {
+              y: { beginAtZero: true, grid: { color: '#e5e7eb' }, ticks: { font: { size: 12 } } },
+              x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
+            }
+          }
+        });
+
+        await new Promise(r => setTimeout(r, 80));
+        const imgData = offscreen.toDataURL('image/png');
+        chartInst.destroy();
+
+        const chartW = pageW - margin * 2;
+        const chartH = 68;
+        doc.addImage(imgData, 'PNG', margin, curY, chartW, chartH);
+        curY += chartH + 6;
+
+        checkPageBreak(30);
+        autoTable.default(doc, {
+          head: [['Fecha', 'PM2.5', 'PM10', 'NO2', 'O3']],
+          body: hist.map(h => [h.date, h.pm25, h.pm10, h.no2, h.o3 ?? '-']),
+          startY: curY, margin: { left: margin, right: margin }, theme: 'striped',
+          headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+          styles: { fontSize: 8, cellPadding: 2 },
+        });
+        curY = (doc as any).lastAutoTable.finalY + 6;
+      }
+
+      // Mapa de Calor
+      if (data?.length) {
+        checkPageBreak(40);
+        addSectionTitle('MAPA DE CALOR PM2.5');
+        const values = data.map(p => p.value);
+        const avg = (values.reduce((a, b) => a + b, 0) / values.length).toFixed(1);
+        doc.setFontSize(9);
+        doc.text(`Total: ${data.length} puntos   Promedio: ${avg} ug/m3   Max: ${Math.max(...values)}   Min: ${Math.min(...values)}`, margin, curY);
+        curY += 5;
+        autoTable.default(doc, {
+          head: [['Latitud', 'Longitud', 'PM2.5', 'Ubicacion']],
+          body: data.slice(0, 200).map(p => [p.lat.toFixed(5), p.lng.toFixed(5), p.value, p.location ?? '']),
+          startY: curY, margin: { left: margin, right: margin }, theme: 'striped',
+          headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+          styles: { fontSize: 7.5, cellPadding: 1.5 },
+          columnStyles: { 0: { halign: 'right' }, 1: { halign: 'right' }, 2: { halign: 'center' } },
+        });
+      }
+
       doc.save(`${filename}_${this.getTimestamp()}.pdf`);
     } catch (error) {
       console.error('[ApiService] Error generating PDF:', error);
       throw error;
     }
+  }
+
+  public exportPollutionToJSON(data: PollutionHeatmapPoint[], filename: string = 'contaminacion_valencia'): void {
+    const aq   = this.airQualitySignal();
+    const w    = this.weatherSignal();
+    const tr   = this.trafficSignal();
+    const hist = this.pollutionHistorySignal();
+
+    const exportData = {
+      meta: {
+        titulo: 'Informe Ambiental - Valencia',
+        fechaSeleccionada: this.selectedDateSignal(),
+        generado: new Date().toLocaleString('es-ES'),
+      },
+      calidadDelAire: aq ? {
+        aqi: aq.aqi,
+        categoria: aq.category,
+        fuente: aq.sourceName,
+        contaminantes: aq.pollutants?.map(p => ({ nombre: p.name, valor: p.value, unidad: p.unit }))
+      } : null,
+      meteorologia: w ? {
+        temperatura_C: w.temperature,
+        lluvia_mmh: w.rain,
+        probLluvia_pct: w.rainProbability,
+        humedad_pct: w.humidity,
+        acumulado24h_mm: w.rain24h,
+      } : null,
+      trafico: tr ? {
+        congestionGeneral_pct: tr.overallCongestion,
+        categoria: tr.category,
+        calles: tr.streets
+      } : null,
+      evolucionContaminacion: hist?.map(h => ({
+        fecha: h.date, pm25: h.pm25, pm10: h.pm10, no2: h.no2, o3: h.o3
+      })) ?? [],
+      mapaCalorPM25: data?.map(p => ({
+        latitud: p.lat, longitud: p.lng, pm25: p.value, ubicacion: p.location ?? null
+      })) ?? []
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${filename}_${this.getTimestamp()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   private getTimestamp(): string {

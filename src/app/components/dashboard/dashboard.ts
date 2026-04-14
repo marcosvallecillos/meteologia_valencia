@@ -152,6 +152,31 @@ export class Dashboard implements OnInit {
   }
 
   /**
+   * Exporta los datos de contaminación a formato JSON
+   */
+  async exportarJSON(): Promise<void> {
+    if (this.loading()) return;
+    this.loading.set(true);
+    try {
+      const datos = await this.api.fetchPollutionHeatmapValencia();
+      
+      if (!datos || datos.length === 0) {
+        console.warn('No hay datos disponibles para exportar');
+        alert('No hay datos de contaminación disponibles para exportar');
+        return;
+      }
+      
+      this.api.exportPollutionToJSON(datos, 'contaminacion_valencia');
+      console.log(`JSON exportado exitosamente: ${datos.length} registros`);
+    } catch (error) {
+      console.error('Error al exportar JSON:', error);
+      alert('Hubo un error al generar el archivo JSON. Por favor, inténtalo de nuevo.');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  /**
    * Exporta datos filtrados por rango de valores PM2.5
    */
   async exportarPDFFiltrado(minValue?: number, maxValue?: number): Promise<void> {

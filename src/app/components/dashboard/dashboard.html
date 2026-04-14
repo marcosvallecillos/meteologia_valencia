@@ -1,6 +1,6 @@
 <div class="dashboard">
   <header class="dashboard-header">
-    <div>
+    <div class="header-left">
       <h1>Valencia, España</h1>
       <p>Monitoreo en tiempo real de calidad ambiental y tráfico</p>
       <div class="header-status-row">
@@ -18,6 +18,25 @@
         </div>
       </div>
     </div>
+
+    <div class="header-download-btns">
+      <span class="download-label">Descargar datos</span>
+      <div class="download-btns-row">
+        <button class="btn-download btn-csv" (click)="exportarCSV()" [disabled]="loading()" title="Descargar CSV">
+          <i class="fa-solid fa-file-csv"></i>
+          <span>CSV</span>
+        </button>
+        <button class="btn-download btn-pdf" (click)="exportarPDF()" [disabled]="loading()" title="Descargar PDF">
+          <i class="fa-solid fa-file-pdf"></i>
+          <span>PDF</span>
+        </button>
+        <button class="btn-download btn-json" (click)="exportarJSON()" [disabled]="loading()" title="Descargar JSON">
+          <i class="fa-solid fa-file-code"></i>
+          <span>JSON</span>
+        </button>
+      </div>
+    </div>
+
     <div class="air-index-card">
       <span class="card-subtitle">Tiempo en Valencia</span>
       <div class="header-temp-container" [style.color]="weatherColor()">
@@ -26,7 +45,6 @@
       </div>
       <div class="badge-row">
         <span class="badge">{{ airQuality()?.category || 'Sin datos' }}</span>
-       
       </div>
     </div>
   </header>
@@ -119,34 +137,7 @@
         <h2>Mapa de Calor - Contaminación</h2>
        
       </div>
-      <div class="btn-export-container">
-      <button
-      class="btn-export"
-      (click)="exportarCSV()"
-      [disabled]="loading()">
-      @if(loading()) {
-        <span >Generando...</span>
-      }@else { 
-        <span >Exportar datos <i class="fa-solid fa-arrow-up-from-bracket" style="margin-left: 10px;"></i>
-        </span>
-        
-  
-      }
-    </button>
-    <button
-      class="btn-export-pdf"  
-      (click)="exportarPDF()"
-      [disabled]="loading()">
-      @if(loading()) {
-        <span >Generando...</span>
-      }@else { 
-        <span >Exportar datos PDF <i class="fa-solid fa-arrow-up-from-bracket" style="margin-left: 10px;"></i>
-        </span>
-        
-  
-      }
-    </button>
-    </div>
+    
     <div class="leaflet">
 <app-leaflet></app-leaflet>   
 </div> </article>

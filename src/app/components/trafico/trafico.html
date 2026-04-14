@@ -24,8 +24,37 @@
       </button>
 
       @if (isMapVisible()) {
-        <div class="traffic-map-container" style="margin-top: 1rem; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; position: relative; z-index: 10;">
-          <div id="trafficMap" style="height: 300px; width: 100%;"></div>
+        <div class="map-modal-overlay" (click)="toggleMap()">
+          <div class="map-modal-content" (click)="$event.stopPropagation()">
+            <button class="map-close-btn" (click)="toggleMap()"><i class="fa-solid fa-xmark"></i></button>
+            <div class="map-modal-header">
+              <h3>Mapa de Tráfico de Valencia</h3>
+            </div>
+            <div class="map-modal-body">
+              <div id="trafficMap" class="traffic-map-expanded"></div>
+              <div class="map-legend">
+                <h4 class="legend-title">Nivel de Congestión</h4>
+                <div class="legend-items">
+                  <div class="legend-item">
+                    <span class="legend-color" style="background-color: #10b981; box-shadow: 0 0 10px #10b981aa;"></span>
+                    <span class="legend-text"><strong>Baja</strong>0% - 29%</span>
+                  </div>
+                  <div class="legend-item">
+                    <span class="legend-color" style="background-color: #f59e0b; box-shadow: 0 0 10px #f59e0baa;"></span>
+                    <span class="legend-text"><strong>Media</strong>30% - 59%</span>
+                  </div>
+                  <div class="legend-item">
+                    <span class="legend-color" style="background-color: #ef4444; box-shadow: 0 0 10px #ef4444aa;"></span>
+                    <span class="legend-text"><strong>Alta</strong>60% - 84%</span>
+                  </div>
+                  <div class="legend-item">
+                    <span class="legend-color" style="background-color: #8b0000; box-shadow: 0 0 10px #8b0000aa;"></span>
+                    <span class="legend-text"><strong>Muy Alta</strong>85%+</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       }
     }
